@@ -29,6 +29,8 @@ This app runs both listeners. Devices push attendance events the moment they hap
 
 ## Requirements
 
+Either **Docker** (Engine 24+ with Compose v2.24+ — see [Docker](#docker)), or:
+
 - Python 3.11+
 - One of: MariaDB/MySQL, PostgreSQL, or MSSQL
 - Node 18+ (development only — servers download a prebuilt frontend from GitHub Releases)
@@ -42,7 +44,13 @@ This app runs both listeners. Devices push attendance events the moment they hap
 - One of: MariaDB/MySQL, PostgreSQL, or MSSQL
 - Node 18+ with npm (development only)
 
-### Guided installer (recommended)
+### Docker
+
+See [DEPLOY.md](DEPLOY.md) — one image for backend + UI, one compose file
+with a bundled MariaDB (or point it at a database you already have), and the
+one setting (`TRUSTED_PROXIES`) that differs from a native install.
+
+### Guided installer (recommended for a bare-metal install)
 
 The installer handles everything interactively — configuration, dependencies, frontend build, and optional service registration.
 
@@ -173,7 +181,7 @@ automatically on first run.
 
 On each ZKTeco device, set the ADMS / Cloud Server address to wherever the
 app is actually reachable — `http://<server-ip>:8000` on a LAN deployment
-with `APP_HOST=0.0.0.0`, or your public hostname over HTTPS
+with `APP_HOST=0.0.0.0` (`APP_BIND=0.0.0.0` under Docker), or your public hostname over HTTPS
 (`https://zk.example.com`) behind Apache.
 
 By default an unrecognized device serial is **refused, not auto-registered**
@@ -342,4 +350,9 @@ frontend/
 deploy/
   apache/
     zkteco-sync.conf.example   # Reference reverse-proxy vhost
+Dockerfile                     # Multi-stage build; Alpine runtime by default (see DEPLOY.md)
+docker-compose.yml             # App + bundled MariaDB (or your own DB via .env)
+docker/
+  healthcheck.py               # Container liveness probe (GET /healthz with a valid Host)
+DEPLOY.md                      # Running it in Docker
 ```

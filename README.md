@@ -18,6 +18,7 @@ This app runs both listeners. Devices push attendance events the moment they hap
 - **Real-time attendance** via ADMS push from devices
 - **On-demand sync** — pull employees, attendance, and fingerprint templates from any device
 - **Employee management** — view all employees, push to specific devices, remove from devices
+- **Excel export** — the monthly timesheet, as a formatted `.xlsx`. *Daily summary* gives one row per person per day (first punch in, last punch out, hours, punch count); *All punches* gives every record. Both cover the whole filter (device, employee, date range), not the page on screen. The daily pairing is by clock, not by the device's status field — terminals where nobody presses the mode key stamp every punch identically.
 - **Fingerprint templates** — pull from one device, push to others (one master copy per finger)
 - **Live enrollment** — trigger fingerprint enrollment on a device from the UI
 - **Device control** — unlock door, set clock, write LCD message, restart, queue raw commands
@@ -325,7 +326,7 @@ app/
     users.py        # Admin-only operator account management
     devices.py      # Device CRUD, approval queue, pairing, SDK actions
     employees.py    # Employee read, device/template queries
-    attendance.py   # Attendance list with filters
+    attendance.py   # Attendance list with filters, Excel export
     adms.py         # ADMS push endpoints (device-initiated, unauthenticated)
     hrm_sync.py     # HRM config, status, manual trigger
     audit.py        # Admin-only audit trail read

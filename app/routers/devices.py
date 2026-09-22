@@ -29,7 +29,7 @@ from app.schemas import (
 from app.services import (
     commands, devicecontrol, employee_sync, pairing, provisioning,
 )
-from app.services.poller import pull_attendance, pull_device, pull_employees
+from app.services.poller import pull_attendance, pull_device, pull_employees, store_templates
 from app.services.sdk import device_connection, enroll_user_task
 
 router = APIRouter(prefix="/devices", tags=["devices"], dependencies=[Depends(require_auth)])
@@ -1713,34 +1713,9 @@ def pull_templates(sn: str, response: Response, db: Session = Depends(get_db)):
 
     try:
         with device_connection(device) as conn:
-            users = conn.get_users()
-            uid_map = {u.uid: u.user_id for u in users}
-            fingers = conn.get_templates()
-
-            result = []
-            for finger in fingers:
-                user_id = uid_map.get(finger.uid)
-                if not user_id:
-                    continue
-                packed = finger.json_pack()
-                ft = db.query(FingerprintTemplate).filter_by(
-                    user_id=user_id, finger_id=finger.fid
-                ).first()
-                if ft:
-                    ft.valid = finger.valid
-                    ft.template = packed["template"]
-                    ft.source_device_sn = sn
-                else:
-                    ft = FingerprintTemplate(
-                        user_id=user_id,
-                        finger_id=finger.fid,
-                        valid=finger.valid,
-                        template=packed["template"],
-                        source_device_sn=sn,
-                    )
-                    db.add(ft)
-                result.append(ft)
-
+            # Same writer Sync All uses (poller.store_templates), so a manual
+            # pull and the background one cannot disagree about a row.
+            result = store_templates(db, sn, conn)
             db.commit()
             for r in result:
                 db.refresh(r)

@@ -5,7 +5,7 @@ from zk.exception import ZKErrorConnection, ZKErrorResponse, ZKNetworkError
 
 from app import config
 from app.database import SessionLocal
-from app.models import AttendanceLog, Device
+from app.models import AttendanceLog, Device, FingerprintTemplate
 from app.services import employee_sync
 
 log = logging.getLogger(__name__)
@@ -202,12 +202,113 @@ def pull_attendance(serial_number: str) -> dict:
     return result
 
 
+def store_templates(db, serial_number: str, conn) -> list:
+    """Read every fingerprint the device holds and upsert it into
+    ``fingerprint_templates``. Returns the rows written, in device order.
+
+    The one writer for the SDK-era fingerprint table: the manual
+    "Sync Templates" route and the Sync All pull both come through here, so
+    a template read by either lands in the same row with the same key
+    (``user_id``, ``finger_id``). A finger whose device ``uid`` does not map
+    to a known ``user_id`` is skipped — there is no employee to attach it to.
+
+    Does not commit; the caller owns the transaction.
+    """
+    uid_map = {u.uid: u.user_id for u in conn.get_users()}
+    result = []
+    for finger in conn.get_templates():
+        user_id = uid_map.get(finger.uid)
+        if not user_id:
+            continue
+        packed = finger.json_pack()
+        ft = db.query(FingerprintTemplate).filter_by(
+            user_id=user_id, finger_id=finger.fid
+        ).first()
+        if ft:
+            ft.valid = finger.valid
+            ft.template = packed["template"]
+            ft.source_device_sn = serial_number
+        else:
+            ft = FingerprintTemplate(
+                user_id=user_id,
+                finger_id=finger.fid,
+                valid=finger.valid,
+                template=packed["template"],
+                source_device_sn=serial_number,
+            )
+            db.add(ft)
+        result.append(ft)
+    return result
+
+
+def pull_templates(serial_number: str) -> dict:
+    log.info("pull_templates: starting for device %s", serial_number)
+    result = {"templates_synced": 0, "errors": []}
+    db = SessionLocal()
+    try:
+        device = db.query(Device).filter_by(serial_number=serial_number).first()
+        if not device:
+            log.warning("pull_templates: device %s not found in DB", serial_number)
+            result["errors"].append("Device not found")
+            return result
+
+        conn = None
+        try:
+            log.info("pull_templates: connecting to %s (%s:%s)",
+                     serial_number, device.ip_address, device.port)
+            conn = _connect(device)
+            conn.disable_device()
+
+            rows = store_templates(db, serial_number, conn)
+            result["templates_synced"] = len(rows)
+
+            db.commit()
+            device.last_seen = datetime.now(timezone.utc)
+            device.is_online = True
+            db.commit()
+            log.info("pull_templates: done for %s — %d templates synced",
+                     serial_number, result["templates_synced"])
+
+        except (ZKErrorConnection, ZKNetworkError) as e:
+            log.error("pull_templates: connection error for %s — %s", serial_number, e)
+            result["errors"].append(str(e))
+            device.is_online = False
+            db.commit()
+        except ZKErrorResponse as e:
+            log.error("pull_templates: device %s refused authentication — %s", serial_number, e)
+            result["errors"].append(str(e))
+            db.rollback()
+        except Exception as e:
+            log.exception("pull_templates: unexpected error for %s", serial_number)
+            result["errors"].append(str(e))
+            db.rollback()
+        finally:
+            if conn:
+                try:
+                    conn.enable_device()
+                    conn.disconnect()
+                except Exception:
+                    pass
+    finally:
+        db.close()
+
+    return result
+
+
 def pull_device(serial_number: str) -> dict:
-    """Sync everything: employees + attendance. Used by Sync All and auto-registration."""
+    """Sync everything: employees + attendance + fingerprint templates.
+    Used by Sync All and auto-registration.
+
+    Templates are pulled last and after employees on purpose: a template
+    keys on the ``user_id`` the employee pull just wrote, and a finger for a
+    person the server has not heard of yet would be dropped.
+    """
     emp_result  = pull_employees(serial_number)
     att_result  = pull_attendance(serial_number)
+    tpl_result  = pull_templates(serial_number)
     return {
         "users_synced":      emp_result["users_synced"],
         "attendance_synced": att_result["attendance_synced"],
-        "errors":            emp_result["errors"] + att_result["errors"],
+        "templates_synced":  tpl_result["templates_synced"],
+        "errors":            emp_result["errors"] + att_result["errors"] + tpl_result["errors"],
     }

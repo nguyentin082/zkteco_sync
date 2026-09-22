@@ -4,7 +4,13 @@ from typing import List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import (
-    APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response,
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
 )
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -14,27 +20,54 @@ from zk.finger import Finger
 from app import audit, config
 from app.database import get_db
 from app.models import (
-    Device, DeviceCommandLog, DeviceCommandOutbox, DeviceEmployee, Employee,
-    FingerprintTemplate, User,
+    Device,
+    DeviceCommandLog,
+    DeviceCommandOutbox,
+    DeviceEmployee,
+    Employee,
+    FingerprintTemplate,
+    User,
 )
 from app.deps import require_admin, require_auth
 from app.net import client_ip, valid_cidrs
 from app.schemas import (
-    BulkPushRequest, CommandCreate, CommandLogOut, CommandOut, DeviceCreate,
-    DeviceInfoOut, DeviceOut,
-    DeviceProtocolUpdate, DeviceTimezoneUpdate, DeviceUpdate, EnrollRequest,
-    FingerprintTemplateOut, LcdRequest, PairingOpenRequest, PairingWindowOut,
-    RevocationGroupOut, SetTimeRequest, UnlockRequest,
+    BulkPushRequest,
+    CommandCreate,
+    CommandLogOut,
+    CommandOut,
+    DeviceCreate,
+    DeviceInfoOut,
+    DeviceOut,
+    DeviceProtocolUpdate,
+    DeviceTimezoneUpdate,
+    DeviceUpdate,
+    EnrollRequest,
+    FingerprintTemplateOut,
+    LcdRequest,
+    PairingOpenRequest,
+    PairingWindowOut,
+    RevocationGroupOut,
+    SetTimeRequest,
+    UnlockRequest,
 )
 from app.services import (
-    commands, devicecontrol, employee_sync, pairing, provisioning,
+    commands,
+    devicecontrol,
+    employee_sync,
+    pairing,
+    provisioning,
 )
-from app.services import poller
-from app.services.poller import (pull_attendance, pull_device, pull_employees,
-                                 record_pull_outcome, store_templates)
+from app.services.poller import (
+    pull_attendance,
+    pull_device,
+    pull_employees,
+    store_templates,
+)
 from app.services.sdk import device_connection, enroll_user_task
 
-router = APIRouter(prefix="/devices", tags=["devices"], dependencies=[Depends(require_auth)])
+router = APIRouter(
+    prefix="/devices", tags=["devices"], dependencies=[Depends(require_auth)]
+)
 
 log = logging.getLogger(__name__)
 
@@ -74,14 +107,16 @@ def _as_device_local(dt: datetime, zone: str) -> datetime:
     try:
         return dt.astimezone(ZoneInfo(zone)).replace(tzinfo=None)
     except (ZoneInfoNotFoundError, ValueError):
-        log.warning("device timezone %r not recognised — sending the time "
-                    "as supplied", zone)
+        log.warning(
+            "device timezone %r not recognised — sending the time " "as supplied", zone
+        )
         return dt.replace(tzinfo=None)
 
 
 # ---------------------------------------------------------------------------
 # Basic CRUD
 # ---------------------------------------------------------------------------
+
 
 def _with_pending_revocations(db: Session, rows) -> list:
     """Stamp DeviceOut.pending_revocations on each device (E8).
@@ -115,7 +150,9 @@ def _with_pending_revocations(db: Session, rows) -> list:
 
 @router.get("", response_model=List[DeviceOut])
 def list_devices(
-    status: Optional[str] = Query(default=None, pattern="^(pending|approved|rejected)$"),
+    status: Optional[str] = Query(
+        default=None, pattern="^(pending|approved|rejected)$"
+    ),
     db: Session = Depends(get_db),
 ):
     """All devices, or one trust state — ``?status=pending`` is the approval queue."""
@@ -151,13 +188,20 @@ def create_device(
     db.refresh(device)
     # Manual creation grants trust immediately, same as /approve — worth the
     # same accountability even though it isn't on the roster's call-site list.
-    audit.record(db, admin.username, "device_create", target=device.serial_number, ip=client_ip(request))
+    audit.record(
+        db,
+        admin.username,
+        "device_create",
+        target=device.serial_number,
+        ip=client_ip(request),
+    )
     return device
 
 
 # ---------------------------------------------------------------------------
 # Pairing window — declared before /{sn} so "pairing" is not read as a serial
 # ---------------------------------------------------------------------------
+
 
 def _window_out(row) -> dict:
     remaining = pairing.seconds_remaining(row)
@@ -184,13 +228,22 @@ def open_pairing_window(
 ):
     """Accept unrecognised serials into the approval queue, briefly."""
     row = pairing.open_window(db, payload.minutes, admin.username)
-    audit.record(db, admin.username, "pairing_open", ip=client_ip(request),
-                 detail=f"open_until={row.open_until.isoformat()}")
+    audit.record(
+        db,
+        admin.username,
+        "pairing_open",
+        ip=client_ip(request),
+        detail=f"open_until={row.open_until.isoformat()}",
+    )
     return _window_out(row)
 
 
 @router.delete("/pairing", response_model=PairingWindowOut)
-def close_pairing_window(request: Request, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+def close_pairing_window(
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
     row = pairing.close_window(db, admin.username)
     audit.record(db, admin.username, "pairing_close", ip=client_ip(request))
     return _window_out(row)
@@ -249,14 +302,21 @@ def update_device(
             parts.append(f"allowed_cidrs={device.allowed_cidrs or '(cleared)'}")
         if "comm_key" in fields:
             parts.append("comm_key also changed (value not logged)")
-        audit.record(db, admin.username, "device_allowlist_change", target=sn,
-                     ip=client_ip(request), detail="; ".join(parts))
+        audit.record(
+            db,
+            admin.username,
+            "device_allowlist_change",
+            target=sn,
+            ip=client_ip(request),
+            detail="; ".join(parts),
+        )
     return device
 
 
 # ---------------------------------------------------------------------------
 # Device timezone — its own endpoint, because it rewrites history's labels
 # ---------------------------------------------------------------------------
+
 
 @router.patch("/{sn}/timezone", response_model=DeviceOut)
 def update_device_timezone(
@@ -285,12 +345,12 @@ def update_device_timezone(
         raise HTTPException(
             status_code=400,
             detail=f"'{new_tz}' is not a known IANA timezone name. "
-                   "Use a name from the tz database, e.g. Asia/Dubai.",
+            "Use a name from the tz database, e.g. Asia/Dubai.",
         )
 
     old_tz = device.timezone
     if new_tz == old_tz:
-        return device   # nothing to relabel, nothing to audit
+        return device  # nothing to relabel, nothing to audit
 
     device.timezone = new_tz
     db.commit()
@@ -306,13 +366,21 @@ def update_device_timezone(
     db.commit()
     db.refresh(device)
 
-    log.info("device %s timezone %s -> %s, relabelled %s attendance row(s)",
-             sn, old_tz, new_tz, relabelled)
+    log.info(
+        "device %s timezone %s -> %s, relabelled %s attendance row(s)",
+        sn,
+        old_tz,
+        new_tz,
+        relabelled,
+    )
     audit.record(
-        db, admin.username, "device_timezone_change", target=sn,
+        db,
+        admin.username,
+        "device_timezone_change",
+        target=sn,
         ip=client_ip(request),
         detail=f"timezone {old_tz or '(unset)'} -> {new_tz}; "
-               f"{relabelled} attendance record(s) relabelled; punch times unchanged",
+        f"{relabelled} attendance record(s) relabelled; punch times unchanged",
     )
     return device
 
@@ -320,6 +388,7 @@ def update_device_timezone(
 # ---------------------------------------------------------------------------
 # Device protocol — its own endpoint, because it is a correction, not a field
 # ---------------------------------------------------------------------------
+
 
 @router.patch("/{sn}/protocol", response_model=DeviceOut)
 def update_device_protocol(
@@ -352,17 +421,25 @@ def update_device_protocol(
     new_protocol = payload.protocol
     old_protocol = device.protocol
     if new_protocol == old_protocol and device.protocol_pinned:
-        return device   # already this value, already pinned — nothing to do
+        return device  # already this value, already pinned — nothing to do
 
     device.protocol = new_protocol
     device.protocol_pinned = True
     db.commit()
     db.refresh(device)
 
-    log.warning("device %s protocol %s -> %s (manual, pinned by %s)",
-                sn, old_protocol, new_protocol, admin.username)
+    log.warning(
+        "device %s protocol %s -> %s (manual, pinned by %s)",
+        sn,
+        old_protocol,
+        new_protocol,
+        admin.username,
+    )
     audit.record(
-        db, admin.username, "device_protocol_change", target=sn,
+        db,
+        admin.username,
+        "device_protocol_change",
+        target=sn,
         ip=client_ip(request),
         detail=f"{old_protocol} -> {new_protocol} (manual override, pinned)",
     )
@@ -372,6 +449,7 @@ def update_device_protocol(
 # ---------------------------------------------------------------------------
 # Device approval
 # ---------------------------------------------------------------------------
+
 
 @router.post("/{sn}/approve", response_model=DeviceOut)
 def approve_device(
@@ -406,7 +484,12 @@ def approve_device(
 
 
 @router.post("/{sn}/reject", response_model=DeviceOut)
-def reject_device(sn: str, request: Request, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+def reject_device(
+    sn: str,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
     """Refuse this serial without forgetting it — it stays visible and refused."""
     device = _get_device_or_404(sn, db)
     device.status = "rejected"
@@ -420,7 +503,12 @@ def reject_device(sn: str, request: Request, admin: User = Depends(require_admin
 
 
 @router.delete("/{sn}", status_code=204)
-def delete_device(sn: str, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def delete_device(
+    sn: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
     device = _get_device_or_404(sn, db)
     db.delete(device)
     db.commit()
@@ -447,8 +535,10 @@ def delete_device(sn: str, request: Request, db: Session = Depends(get_db), admi
 #
 # Attendance has no `acc` branch on purpose — see provisioning.NO_ATTENDANCE_QUERY.
 
-def _queued_query_response(sn: str, rows, created: int, response: Response,
-                           what: str, extra: str = "") -> dict:
+
+def _queued_query_response(
+    sn: str, rows, created: int, response: Response, what: str, extra: str = ""
+) -> dict:
     """The one shape every queued-pull answer takes. Says queued, not done."""
     response.status_code = 202
     seconds = max(len(rows), 1) * 10
@@ -464,11 +554,15 @@ def _queued_query_response(sn: str, rows, created: int, response: Response,
         "message": (
             f"Asked {sn} for {what}: {len(rows)} command"
             f"{'' if len(rows) == 1 else 's'} on the queue"
-            + (f" ({reused} of which {'was' if reused == 1 else 'were'} already "
-               "waiting from an earlier click)" if reused else "")
+            + (
+                f" ({reused} of which {'was' if reused == 1 else 'were'} already "
+                "waiting from an earlier click)"
+                if reused
+                else ""
+            )
             + f". The device collects one per poll, so this takes roughly "
-              f"{seconds} seconds, and nothing has been read yet — watch "
-              "Commands for the outcome." + extra
+            f"{seconds} seconds, and nothing has been read yet — watch "
+            "Commands for the outcome." + extra
         ),
     }
 
@@ -486,8 +580,12 @@ def _refuse_if_pulling(sn: str) -> None:
 
 
 @router.post("/{sn}/pull", dependencies=[Depends(require_admin)])
-def trigger_pull(sn: str, background_tasks: BackgroundTasks, response: Response,
-                 db: Session = Depends(get_db)):
+def trigger_pull(
+    sn: str,
+    background_tasks: BackgroundTasks,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     """Sync everything this device can be asked for.
 
     On `acc` that is three confirmed queries — users, photos, templates — and
@@ -499,9 +597,13 @@ def trigger_pull(sn: str, background_tasks: BackgroundTasks, response: Response,
     if _uses_command_queue(device):
         rows, created = provisioning.query_everything(db, sn)
         body = _queued_query_response(
-            sn, rows, created, response, "its people, photos and templates",
+            sn,
+            rows,
+            created,
+            response,
+            "its people, photos and templates",
             extra=" Attendance is not included — these terminals push punches "
-                  "up by themselves.",
+            "up by themselves.",
         )
         # The full reasoning, for a caller that wants it. Not in `message`,
         # which is what the UI shows in a toast.
@@ -513,21 +615,28 @@ def trigger_pull(sn: str, background_tasks: BackgroundTasks, response: Response,
 
 
 @router.post("/{sn}/pull/employees", dependencies=[Depends(require_admin)])
-def trigger_pull_employees(sn: str, background_tasks: BackgroundTasks, response: Response,
-                           db: Session = Depends(get_db)):
+def trigger_pull_employees(
+    sn: str,
+    background_tasks: BackgroundTasks,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     """Read the device's user table into `employees`."""
     device = _get_device_or_404(sn, db)
     if _uses_command_queue(device):
         row, created = provisioning.query_users(db, sn)
-        return _queued_query_response(sn, [row], int(created), response, "its user table")
+        return _queued_query_response(
+            sn, [row], int(created), response, "its user table"
+        )
     _refuse_if_pulling(sn)
     background_tasks.add_task(pull_employees, sn)
     return {"message": "Employee sync started", "device": sn}
 
 
 @router.post("/{sn}/pull/attendance", dependencies=[Depends(require_admin)])
-def trigger_pull_attendance(sn: str, background_tasks: BackgroundTasks,
-                            db: Session = Depends(get_db)):
+def trigger_pull_attendance(
+    sn: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
+):
     """Read buffered punches off the device (`att` only).
 
     On an `acc` terminal this is REFUSED — 501 — and, as with the per-template
@@ -564,6 +673,7 @@ def trigger_pull_attendance(sn: str, background_tasks: BackgroundTasks,
 # ADMS command queue
 # ---------------------------------------------------------------------------
 
+
 @router.post("/{sn}/commands", status_code=201, dependencies=[Depends(require_admin)])
 def queue_command(sn: str, payload: CommandCreate, db: Session = Depends(get_db)):
     """Queue one command for delivery on the device's next poll.
@@ -577,8 +687,11 @@ def queue_command(sn: str, payload: CommandCreate, db: Session = Depends(get_db)
     return CommandOut.model_validate(row)
 
 
-@router.get("/{sn}/commands", response_model=list[CommandOut],
-            dependencies=[Depends(require_admin)])
+@router.get(
+    "/{sn}/commands",
+    response_model=list[CommandOut],
+    dependencies=[Depends(require_admin)],
+)
 def list_outstanding_commands(sn: str, db: Session = Depends(get_db)):
     """What this device still owes us — the whole outbox, oldest first.
 
@@ -595,8 +708,11 @@ def list_outstanding_commands(sn: str, db: Session = Depends(get_db)):
     )
 
 
-@router.get("/{sn}/commands/history", response_model=list[CommandLogOut],
-            dependencies=[Depends(require_admin)])
+@router.get(
+    "/{sn}/commands/history",
+    response_model=list[CommandLogOut],
+    dependencies=[Depends(require_admin)],
+)
 def list_concluded_commands(sn: str, limit: int = 100, db: Session = Depends(get_db)):
     """Commands that are over, most recent first — how each one ended.
 
@@ -641,7 +757,9 @@ def cancel_command(
     _get_device_or_404(sn, db)
     row = (
         db.query(DeviceCommandOutbox)
-        .filter(DeviceCommandOutbox.id == command_id, DeviceCommandOutbox.device_sn == sn)
+        .filter(
+            DeviceCommandOutbox.id == command_id, DeviceCommandOutbox.device_sn == sn
+        )
         .first()
     )
     if row is None:
@@ -663,10 +781,15 @@ def cancel_command(
             detail="Already concluded by the device — nothing left to cancel",
         )
 
-    audit.record(db, admin.username, "device_command_cancel",
-                 target=f"{sn}/{command_id}", ip=client_ip(request),
-                 detail=f"status={'sent' if was_sent else 'pending'} "
-                        f"revocation={revocation} command={command_text[:120]}")
+    audit.record(
+        db,
+        admin.username,
+        "device_command_cancel",
+        target=f"{sn}/{command_id}",
+        ip=client_ip(request),
+        detail=f"status={'sent' if was_sent else 'pending'} "
+        f"revocation={revocation} command={command_text[:120]}",
+    )
 
     return {
         "id": command_id,
@@ -677,20 +800,25 @@ def cancel_command(
             "This command was already delivered to the device at least once "
             "— cancelling only removes our record of owing it. The device "
             "may already have collected and acted on it; nothing was "
-            "recalled." + (
+            "recalled."
+            + (
                 " That person's access may already be gone — check the "
                 "terminal directly if this needs to be certain."
-                if revocation else ""
+                if revocation
+                else ""
             )
-            if was_sent else
-            "Cancelled before delivery. This command was never sent to the "
+            if was_sent
+            else "Cancelled before delivery. This command was never sent to the "
             "device."
         ),
     }
 
 
-@router.post("/{sn}/commands/history/{log_id}/retry", status_code=201,
-             dependencies=[Depends(require_admin)])
+@router.post(
+    "/{sn}/commands/history/{log_id}/retry",
+    status_code=201,
+    dependencies=[Depends(require_admin)],
+)
 def retry_command(
     sn: str,
     log_id: int,
@@ -723,7 +851,8 @@ def retry_command(
     )
     if log_row is None:
         raise HTTPException(
-            status_code=404, detail="No history row with that id on this device",
+            status_code=404,
+            detail="No history row with that id on this device",
         )
     if log_row.outcome != "failed":
         raise HTTPException(
@@ -737,16 +866,24 @@ def retry_command(
     # device "will very likely refuse again" would be asserting something we
     # do not know, about a command that may well have worked. (E11)
     verdict = commands.history_verdict(
-        log_row.outcome, return_code, log_row.last_error, log_row.command,
+        log_row.outcome,
+        return_code,
+        log_row.last_error,
+        log_row.command,
     )
     was_refusal = verdict == "refused"
 
     new_row = commands.retry(db, log_row)
 
-    audit.record(db, admin.username, "device_command_retry",
-                 target=f"{sn}/{log_id}", ip=client_ip(request),
-                 detail=f"new_command_id={new_row.id} verdict={verdict} "
-                        f"return_code={return_code if return_code is not None else 'none'}")
+    audit.record(
+        db,
+        admin.username,
+        "device_command_retry",
+        target=f"{sn}/{log_id}",
+        ip=client_ip(request),
+        detail=f"new_command_id={new_row.id} verdict={verdict} "
+        f"return_code={return_code if return_code is not None else 'none'}",
+    )
 
     if was_refusal:
         message = (
@@ -797,8 +934,10 @@ def retry_command(
 # actions. The refusals name the reason, because "not supported here" and
 # "broken" look identical from a menu.
 
-def _queued_control_response(sn: str, row, response: Response, what: str,
-                             extra: str = "") -> dict:
+
+def _queued_control_response(
+    sn: str, row, response: Response, what: str, extra: str = ""
+) -> dict:
     """The one shape every queued device-control answer takes.
 
     Says *queued*, never *done*. Nothing on this transport is synchronous, and
@@ -823,6 +962,7 @@ def _queued_control_response(sn: str, row, response: Response, what: str,
 # ---------------------------------------------------------------------------
 # Device info
 # ---------------------------------------------------------------------------
+
 
 @router.get("/{sn}/info", response_model=None)
 def get_device_info(sn: str, db: Session = Depends(get_db)):
@@ -850,24 +990,26 @@ def get_device_info(sn: str, db: Session = Depends(get_db)):
     if _uses_command_queue(device):
         options = devicecontrol.parse_options(device.capabilities or "")
         info = devicecontrol.options_as_info(options)
-        info.update({
-            "device_sn": sn,
-            "transport": "adms_last_known",
-            "source": "last_known",
-            "as_of": device.capabilities_at,
-            "parameter_count": len(options),
-            "message": (
-                "Last known values, reported by the terminal itself — not a "
-                "live reading. An access-control terminal cannot be dialled "
-                "for this; it sends its parameters when it registers and "
-                "whenever they change. Use Refresh to ask it again, which is "
-                "queued and answers on its next poll."
-                if options else
-                "This terminal has not sent its parameters yet, so there is "
-                "nothing to show. They arrive when it registers; Refresh asks "
-                "for them now, which is queued and answers on its next poll."
-            ),
-        })
+        info.update(
+            {
+                "device_sn": sn,
+                "transport": "adms_last_known",
+                "source": "last_known",
+                "as_of": device.capabilities_at,
+                "parameter_count": len(options),
+                "message": (
+                    "Last known values, reported by the terminal itself — not a "
+                    "live reading. An access-control terminal cannot be dialled "
+                    "for this; it sends its parameters when it registers and "
+                    "whenever they change. Use Refresh to ask it again, which is "
+                    "queued and answers on its next poll."
+                    if options
+                    else "This terminal has not sent its parameters yet, so there is "
+                    "nothing to show. They arrive when it registers; Refresh asks "
+                    "for them now, which is queued and answers on its next poll."
+                ),
+            }
+        )
         # The serial is the one field we always know for certain, whatever the
         # device has or has not told us about itself.
         info["serial_number"] = info.get("serial_number") or sn
@@ -925,19 +1067,25 @@ def refresh_device_info(sn: str, response: Response, db: Session = Depends(get_d
                 "dialled and answer on their next poll instead."
             ),
         )
-    row, created = provisioning.queue_query(
-        db, sn, devicecontrol.QUERY_OPTIONS)
+    row, created = provisioning.queue_query(db, sn, devicecontrol.QUERY_OPTIONS)
     return _queued_control_response(
-        sn, row, response, "asked the terminal to re-send its parameters",
-        extra="" if created else
-        " (an identical request was already waiting, so this reuses it "
-        "rather than costing another poll cycle.)",
+        sn,
+        row,
+        response,
+        "asked the terminal to re-send its parameters",
+        extra=(
+            ""
+            if created
+            else " (an identical request was already waiting, so this reuses it "
+            "rather than costing another poll cycle.)"
+        ),
     )
 
 
 # ---------------------------------------------------------------------------
 # Device clock
 # ---------------------------------------------------------------------------
+
 
 @router.get("/{sn}/time")
 def get_device_time(sn: str, db: Session = Depends(get_db)):
@@ -972,8 +1120,9 @@ def get_device_time(sn: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{sn}/time", response_model=None, dependencies=[Depends(require_admin)])
-def set_device_time(sn: str, payload: SetTimeRequest, response: Response,
-                    db: Session = Depends(get_db)):
+def set_device_time(
+    sn: str, payload: SetTimeRequest, response: Response, db: Session = Depends(get_db)
+):
     """Set the device's clock.
 
     * `att` — set live over the SDK, unchanged.
@@ -995,7 +1144,9 @@ def set_device_time(sn: str, payload: SetTimeRequest, response: Response,
         try:
             target = datetime.fromisoformat(payload.dt)
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid datetime format — use ISO 8601")
+            raise HTTPException(
+                status_code=400, detail="Invalid datetime format — use ISO 8601"
+            )
     else:
         raise HTTPException(status_code=400, detail="Provide sync=true or a dt value")
 
@@ -1004,7 +1155,9 @@ def set_device_time(sn: str, payload: SetTimeRequest, response: Response,
         local = _as_device_local(target, zone)
         row = commands.queue(db, sn, devicecontrol.set_time_command(local))
         body = _queued_control_response(
-            sn, row, response,
+            sn,
+            row,
+            response,
             f"set the clock to {local.strftime('%Y-%m-%d %H:%M:%S')} ({zone})",
         )
         body["time_set"] = local.isoformat()
@@ -1022,6 +1175,7 @@ def set_device_time(sn: str, payload: SetTimeRequest, response: Response,
 # ---------------------------------------------------------------------------
 # Door control
 # ---------------------------------------------------------------------------
+
 
 @router.post("/{sn}/unlock", response_model=None)
 def unlock_door(
@@ -1060,22 +1214,32 @@ def unlock_door(
     if _uses_command_queue(device):
         try:
             command = devicecontrol.unlock_command(
-                door=payload.door, seconds=payload.seconds)
+                door=payload.door, seconds=payload.seconds
+            )
         except devicecontrol.UnsafeDoorCommand as e:
             # 400, not 500: the caller asked for something specific and this
             # says exactly which part of it will not be sent to a door.
             raise HTTPException(status_code=400, detail=str(e))
 
         row = commands.queue(
-            db, sn, command,
+            db,
+            sn,
+            command,
             ttl_seconds=config.DOOR_COMMAND_TTL_SECONDS,
         )
-        audit.record(db, admin.username, "door_unlock_queued", target=sn,
-                     ip=client_ip(request),
-                     detail=f"door={payload.door} seconds={payload.seconds} "
-                            f"command_id={row.id}")
+        audit.record(
+            db,
+            admin.username,
+            "door_unlock_queued",
+            target=sn,
+            ip=client_ip(request),
+            detail=f"door={payload.door} seconds={payload.seconds} "
+            f"command_id={row.id}",
+        )
         body = _queued_control_response(
-            sn, row, response,
+            sn,
+            row,
+            response,
             f"open door {payload.door} for {payload.seconds} seconds",
             extra=(
                 f" THIS IS NOT AN IMMEDIATE UNLOCK: the door opens when the "
@@ -1085,22 +1249,33 @@ def unlock_door(
                 "cancelled and the door will NOT open later."
             ),
         )
-        body.update({
-            "door": payload.door,
-            "unlocked_for_seconds": None,
-            "requested_seconds": payload.seconds,
-            "expires_at": row.expires_at,
-            "synchronous": False,
-        })
+        body.update(
+            {
+                "door": payload.door,
+                "unlocked_for_seconds": None,
+                "requested_seconds": payload.seconds,
+                "expires_at": row.expires_at,
+                "synchronous": False,
+            }
+        )
         return body
 
     try:
         with device_connection(device) as conn:
             conn.unlock(time=payload.seconds)
-            audit.record(db, admin.username, "door_unlock", target=sn,
-                         ip=client_ip(request), detail=f"seconds={payload.seconds}")
-            return {"device_sn": sn, "unlocked_for_seconds": payload.seconds,
-                    "synchronous": True}
+            audit.record(
+                db,
+                admin.username,
+                "door_unlock",
+                target=sn,
+                ip=client_ip(request),
+                detail=f"seconds={payload.seconds}",
+            )
+            return {
+                "device_sn": sn,
+                "unlocked_for_seconds": payload.seconds,
+                "synchronous": True,
+            }
     except (ZKErrorConnection, ZKNetworkError):
         raise HTTPException(status_code=503, detail="Could not connect to device")
 
@@ -1125,7 +1300,7 @@ def get_lock_state(sn: str, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=501,
             detail=f"{sn} is an access-control terminal. "
-                   + devicecontrol.NO_LOCK_STATE_READ,
+            + devicecontrol.NO_LOCK_STATE_READ,
         )
     try:
         with device_connection(device) as conn:
@@ -1139,10 +1314,15 @@ def get_lock_state(sn: str, db: Session = Depends(get_db)):
 # Device control
 # ---------------------------------------------------------------------------
 
+
 @router.post("/{sn}/restart", response_model=None)
-def restart_device(sn: str, request: Request, response: Response,
-                   db: Session = Depends(get_db),
-                   admin: User = Depends(require_admin)):
+def restart_device(
+    sn: str,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
     """Reboot the device.
 
     * `att` — SDK, synchronous, unchanged.
@@ -1156,18 +1336,29 @@ def restart_device(sn: str, request: Request, response: Response,
 
     if _uses_command_queue(device):
         row = commands.queue(db, sn, devicecontrol.restart_command())
-        audit.record(db, admin.username, "device_restart_queued", target=sn,
-                     ip=client_ip(request), detail=f"command_id={row.id}")
+        audit.record(
+            db,
+            admin.username,
+            "device_restart_queued",
+            target=sn,
+            ip=client_ip(request),
+            detail=f"command_id={row.id}",
+        )
         return _queued_control_response(
-            sn, row, response, "restart the terminal",
+            sn,
+            row,
+            response,
+            "restart the terminal",
             extra=" It will go offline briefly once it collects this, and "
-                  "reconnect by itself.",
+            "reconnect by itself.",
         )
 
     try:
         with device_connection(device) as conn:
             conn.restart()
-            audit.record(db, admin.username, "device_restart", target=sn, ip=client_ip(request))
+            audit.record(
+                db, admin.username, "device_restart", target=sn, ip=client_ip(request)
+            )
             return {"device_sn": sn, "message": "Device restarting"}
     except (ZKErrorConnection, ZKNetworkError):
         raise HTTPException(status_code=503, detail="Could not connect to device")
@@ -1188,7 +1379,7 @@ def write_lcd(sn: str, payload: LcdRequest, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=501,
             detail=f"{sn} is an access-control terminal. "
-                   + devicecontrol.NO_LCD_COMMAND,
+            + devicecontrol.NO_LCD_COMMAND,
         )
     try:
         with device_connection(device) as conn:
@@ -1206,7 +1397,7 @@ def clear_lcd(sn: str, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=501,
             detail=f"{sn} is an access-control terminal. "
-                   + devicecontrol.NO_LCD_COMMAND,
+            + devicecontrol.NO_LCD_COMMAND,
         )
     try:
         with device_connection(device) as conn:
@@ -1243,6 +1434,7 @@ def clear_lcd(sn: str, db: Session = Depends(get_db)):
 # both go through employee_sync.link_device_employee, which is the single
 # writer E1 established.
 
+
 def _uses_command_queue(device: Device) -> bool:
     """True if this device is provisioned over the ADMS queue rather than SDK.
 
@@ -1262,12 +1454,15 @@ def list_device_users(sn: str, db: Session = Depends(get_db)):
     """Return user_ids enrolled on this device."""
     _get_device_or_404(sn, db)
     rows = db.query(DeviceEmployee).filter_by(device_sn=sn).all()
-    return [{"user_id": r.user_id, "uid": r.uid, "synced_at": r.synced_at} for r in rows]
+    return [
+        {"user_id": r.user_id, "uid": r.uid, "synced_at": r.synced_at} for r in rows
+    ]
 
 
 @router.post("/{sn}/users/push_bulk", dependencies=[Depends(require_admin)])
-def push_users_bulk(sn: str, payload: BulkPushRequest, response: Response,
-                    db: Session = Depends(get_db)):
+def push_users_bulk(
+    sn: str, payload: BulkPushRequest, response: Response, db: Session = Depends(get_db)
+):
     """Push several employees to one device. Same two transports, same rules.
 
     On an `acc` device this is queueing, and the queue is deliberately slow:
@@ -1352,7 +1547,9 @@ def push_users_bulk(sn: str, payload: BulkPushRequest, response: Response,
 
 
 @router.post("/{sn}/users/{user_id}/push", dependencies=[Depends(require_admin)])
-def push_user_to_device(sn: str, user_id: str, response: Response, db: Session = Depends(get_db)):
+def push_user_to_device(
+    sn: str, user_id: str, response: Response, db: Session = Depends(get_db)
+):
     """Put one employee onto one device. Explicit, per device, never fanned out.
 
     Two transports, chosen by Device.protocol (see _uses_command_queue above),
@@ -1400,7 +1597,9 @@ def push_user_to_device(sn: str, user_id: str, response: Response, db: Session =
     try:
         with device_connection(device) as conn:
             users_on_device = conn.get_users()  # also initialises conn.next_uid
-            existing = next((u for u in users_on_device if u.user_id == str(user_id)), None)
+            existing = next(
+                (u for u in users_on_device if u.user_id == str(user_id)), None
+            )
 
             uid = existing.uid if existing else None
             pre_uid = conn.next_uid  # pyzk will assign this if uid is None
@@ -1522,16 +1721,23 @@ def remove_user_from_device(
         # later, which is the opposite of what was asked for.
         if not de:
             withdrawn = provisioning.withdraw_pushes_for(
-                db, sn, user_id,
+                db,
+                sn,
+                user_id,
                 reason=f"withdrawn: {user_id} was removed from {sn} before delivery",
             )
             if not withdrawn:
                 raise HTTPException(
                     status_code=404, detail="User not enrolled on this device"
                 )
-            audit.record(db, admin.username, "device_user_remove",
-                         target=f"{sn}/{user_id}", ip=client_ip(request),
-                         detail=f"withdrew {len(withdrawn)} undelivered push(es)")
+            audit.record(
+                db,
+                admin.username,
+                "device_user_remove",
+                target=f"{sn}/{user_id}",
+                ip=client_ip(request),
+                detail=f"withdrew {len(withdrawn)} undelivered push(es)",
+            )
             return {
                 "device_sn": sn,
                 "user_id": user_id,
@@ -1546,9 +1752,14 @@ def remove_user_from_device(
             }
 
         rows, withdrawn = provisioning.revoke(db, sn, user_id)
-        audit.record(db, admin.username, "device_user_remove",
-                     target=f"{sn}/{user_id}", ip=client_ip(request),
-                     detail=f"queued={len(rows)} withdrew={len(withdrawn)}")
+        audit.record(
+            db,
+            admin.username,
+            "device_user_remove",
+            target=f"{sn}/{user_id}",
+            ip=client_ip(request),
+            detail=f"queued={len(rows)} withdrew={len(withdrawn)}",
+        )
         response.status_code = 202
         return {
             "device_sn": sn,
@@ -1583,8 +1794,14 @@ def remove_user_from_device(
     except (ZKErrorConnection, ZKNetworkError):
         raise HTTPException(status_code=503, detail="Could not connect to device")
 
-    audit.record(db, admin.username, "device_user_remove", target=f"{sn}/{user_id}",
-                 ip=client_ip(request), detail="transport=sdk")
+    audit.record(
+        db,
+        admin.username,
+        "device_user_remove",
+        target=f"{sn}/{user_id}",
+        ip=client_ip(request),
+        detail="transport=sdk",
+    )
     return {
         "device_sn": sn,
         "user_id": user_id,
@@ -1594,9 +1811,14 @@ def remove_user_from_device(
     }
 
 
-@router.get("/{sn}/revocations", response_model=list[RevocationGroupOut],
-            dependencies=[Depends(require_admin)])
-def list_revocations(sn: str, user_id: Optional[str] = None, db: Session = Depends(get_db)):
+@router.get(
+    "/{sn}/revocations",
+    response_model=list[RevocationGroupOut],
+    dependencies=[Depends(require_admin)],
+)
+def list_revocations(
+    sn: str, user_id: Optional[str] = None, db: Session = Depends(get_db)
+):
     """Revocations this device still owes somebody, one entry per person —
     not one per underlying `DATA DELETE` command (E13).
 
@@ -1610,7 +1832,9 @@ def list_revocations(sn: str, user_id: Optional[str] = None, db: Session = Depen
     return provisioning.revocation_groups(db, sn, user_id)
 
 
-@router.delete("/{sn}/users/{user_id}/revocation", dependencies=[Depends(require_admin)])
+@router.delete(
+    "/{sn}/users/{user_id}/revocation", dependencies=[Depends(require_admin)]
+)
 def cancel_user_revocation(
     sn: str,
     user_id: str,
@@ -1636,9 +1860,14 @@ def cancel_user_revocation(
             status_code=404,
             detail=f"No outstanding revocation for {user_id} on {sn}",
         )
-    audit.record(db, admin.username, "device_user_revocation_cancel",
-                 target=f"{sn}/{user_id}", ip=client_ip(request),
-                 detail=f"cancelled={len(cancelled)}")
+    audit.record(
+        db,
+        admin.username,
+        "device_user_revocation_cancel",
+        target=f"{sn}/{user_id}",
+        ip=client_ip(request),
+        detail=f"cancelled={len(cancelled)}",
+    )
     return {
         "device_sn": sn,
         "user_id": user_id,
@@ -1655,6 +1884,7 @@ def cancel_user_revocation(
 # ---------------------------------------------------------------------------
 # Attendance: clear device memory
 # ---------------------------------------------------------------------------
+
 
 @router.delete("/{sn}/attendance", status_code=204, response_model=None)
 def clear_device_attendance(
@@ -1685,19 +1915,29 @@ def clear_device_attendance(
 
     if _uses_command_queue(device):
         row = commands.queue(db, sn, devicecontrol.CLEAR_RECORDS)
-        audit.record(db, admin.username, "clear_attendance_queued", target=sn,
-                     ip=client_ip(request), detail=f"command_id={row.id}")
+        audit.record(
+            db,
+            admin.username,
+            "clear_attendance_queued",
+            target=sn,
+            ip=client_ip(request),
+            detail=f"command_id={row.id}",
+        )
         return _queued_control_response(
-            sn, row, response,
+            sn,
+            row,
+            response,
             "clear the access-control records held on the terminal",
             extra=" Nothing has been deleted yet, and nothing already synced "
-                  "to this database is affected either way.",
+            "to this database is affected either way.",
         )
 
     try:
         with device_connection(device) as conn:
             conn.clear_attendance()
-            audit.record(db, admin.username, "clear_attendance", target=sn, ip=client_ip(request))
+            audit.record(
+                db, admin.username, "clear_attendance", target=sn, ip=client_ip(request)
+            )
     except (ZKErrorConnection, ZKNetworkError):
         raise HTTPException(status_code=503, detail="Could not connect to device")
 
@@ -1706,7 +1946,10 @@ def clear_device_attendance(
 # Fingerprint templates
 # ---------------------------------------------------------------------------
 
-@router.post("/{sn}/templates/pull", response_model=None, dependencies=[Depends(require_admin)])
+
+@router.post(
+    "/{sn}/templates/pull", response_model=None, dependencies=[Depends(require_admin)]
+)
 def pull_templates(sn: str, response: Response, db: Session = Depends(get_db)):
     """Read the biometrics a device holds. Two transports, as everywhere else.
 
@@ -1725,8 +1968,9 @@ def pull_templates(sn: str, response: Response, db: Session = Depends(get_db)):
 
     if _uses_command_queue(device):
         row, created = provisioning.query_templates(db, sn)
-        return _queued_query_response(sn, [row], int(created), response,
-                                      "its biometric templates")
+        return _queued_query_response(
+            sn, [row], int(created), response, "its biometric templates"
+        )
 
     _refuse_if_pulling(sn)
     try:
@@ -1739,15 +1983,25 @@ def pull_templates(sn: str, response: Response, db: Session = Depends(get_db)):
                 db.refresh(r)
             # Recorded like the background pulls are, so the Devices page's
             # "last sync" reads the same whichever route read the templates.
-            record_pull_outcome(db, device, "templates", True,
-                                f"{len(result)} templates read from the device")
+            record_pull_outcome(
+                db,
+                device,
+                "templates",
+                True,
+                f"{len(result)} templates read from the device",
+            )
             # Serialised here rather than by `response_model`, which this
             # endpoint gave up when it grew a second transport that answers
             # with a queue receipt. The `att` body is unchanged.
             return [FingerprintTemplateOut.model_validate(r) for r in result]
     except (ZKErrorConnection, ZKNetworkError) as exc:
-        record_pull_outcome(db, device, "templates", False,
-                            f"Could not connect to {device.ip_address}:{device.port} — {exc}")
+        record_pull_outcome(
+            db,
+            device,
+            "templates",
+            False,
+            f"Could not connect to {device.ip_address}:{device.port} — {exc}",
+        )
         raise HTTPException(status_code=503, detail="Could not connect to device")
 
 
@@ -1827,12 +2081,21 @@ def _queue_templates_to_device(sn, user_id, request, response, db, admin):
     # so its presence is evidence rather than optimism.
     already_there = provisioning.is_on_device(db, sn, user_id)
     rows = provisioning.push_templates(
-        db, sn, emp, bodies, with_user_record=not already_there,
+        db,
+        sn,
+        emp,
+        bodies,
+        with_user_record=not already_there,
     )
 
-    audit.record(db, admin.username, "template_queue", target=f"{sn}/{user_id}",
-                 ip=client_ip(request),
-                 detail=f"templates={len(bodies)} user_record={not already_there}")
+    audit.record(
+        db,
+        admin.username,
+        "template_queue",
+        target=f"{sn}/{user_id}",
+        ip=client_ip(request),
+        detail=f"templates={len(bodies)} user_record={not already_there}",
+    )
 
     response.status_code = 202
     seconds = len(rows) * 10
@@ -1852,13 +2115,16 @@ def _queue_templates_to_device(sn, user_id, request, response, db, admin):
             {"type": t.type, "no": t.no} for t in from_this_device
         ],
         "skipped_unsendable": [
-            {"type": t.type, "no": t.no, "reason": reason}
-            for t, reason in unsendable
+            {"type": t.type, "no": t.no, "reason": reason} for t, reason in unsendable
         ],
         "message": (
             f"Queued {len(rows)} commands for {sn}: {len(bodies)} template(s)"
-            + (" behind the person's user record and door permission, which "
-               "this terminal has not confirmed yet" if not already_there else "")
+            + (
+                " behind the person's user record and door permission, which "
+                "this terminal has not confirmed yet"
+                if not already_there
+                else ""
+            )
             + f". At one command per poll this takes roughly {seconds} seconds, "
             "and nothing is delivered until the device collects it — this is "
             "not delivered yet."
@@ -1898,32 +2164,48 @@ def push_templates_to_device(
 
     de = db.query(DeviceEmployee).filter_by(device_sn=sn, user_id=user_id).first()
     if not de:
-        raise HTTPException(status_code=404, detail="User not enrolled on this device — call /push first")
+        raise HTTPException(
+            status_code=404,
+            detail="User not enrolled on this device — call /push first",
+        )
 
     templates = db.query(FingerprintTemplate).filter_by(user_id=user_id).all()
     if not templates:
-        raise HTTPException(status_code=404, detail="No fingerprint templates in DB for this employee")
+        raise HTTPException(
+            status_code=404, detail="No fingerprint templates in DB for this employee"
+        )
 
     try:
         with device_connection(device) as conn:
             users = conn.get_users()
             device_user = next((u for u in users if u.user_id == str(user_id)), None)
             if not device_user:
-                raise HTTPException(status_code=422, detail="User not found on device — call /push first")
+                raise HTTPException(
+                    status_code=422,
+                    detail="User not found on device — call /push first",
+                )
 
             fingers = [
-                Finger.json_unpack({
-                    "uid": device_user.uid,  # uid on THIS device, not the source device
-                    "fid": ft.finger_id,
-                    "valid": ft.valid,
-                    "template": ft.template,
-                })
+                Finger.json_unpack(
+                    {
+                        "uid": device_user.uid,  # uid on THIS device, not the source device
+                        "fid": ft.finger_id,
+                        "valid": ft.valid,
+                        "template": ft.template,
+                    }
+                )
                 for ft in templates
             ]
             conn.save_user_template(device_user, fingers)
 
-        audit.record(db, admin.username, "template_push", target=f"{sn}/{user_id}",
-                     ip=client_ip(request), detail=f"fingers={len(fingers)}")
+        audit.record(
+            db,
+            admin.username,
+            "template_push",
+            target=f"{sn}/{user_id}",
+            ip=client_ip(request),
+            detail=f"fingers={len(fingers)}",
+        )
         return {
             "device_sn": sn,
             "user_id": user_id,
@@ -1993,12 +2275,21 @@ def delete_user_template(
     try:
         with device_connection(device) as conn:
             conn.delete_user_template(uid=de.uid, temp_id=finger_id, user_id=user_id)
-        ft = db.query(FingerprintTemplate).filter_by(user_id=user_id, finger_id=finger_id).first()
+        ft = (
+            db.query(FingerprintTemplate)
+            .filter_by(user_id=user_id, finger_id=finger_id)
+            .first()
+        )
         if ft:
             db.delete(ft)
             db.commit()
-        audit.record(db, admin.username, "template_delete", target=f"{sn}/{user_id}/{finger_id}",
-                     ip=client_ip(request))
+        audit.record(
+            db,
+            admin.username,
+            "template_delete",
+            target=f"{sn}/{user_id}/{finger_id}",
+            ip=client_ip(request),
+        )
     except (ZKErrorConnection, ZKNetworkError):
         raise HTTPException(status_code=503, detail="Could not connect to device")
 
@@ -2007,7 +2298,12 @@ def delete_user_template(
 # Live enrollment
 # ---------------------------------------------------------------------------
 
-@router.post("/{sn}/users/{user_id}/enroll", status_code=202, dependencies=[Depends(require_admin)])
+
+@router.post(
+    "/{sn}/users/{user_id}/enroll",
+    status_code=202,
+    dependencies=[Depends(require_admin)],
+)
 def enroll_user(
     sn: str,
     user_id: str,
@@ -2023,7 +2319,10 @@ def enroll_user(
     """
     _get_device_or_404(sn, db)
     if not db.query(DeviceEmployee).filter_by(device_sn=sn, user_id=user_id).first():
-        raise HTTPException(status_code=404, detail="User not enrolled on this device — call /push first")
+        raise HTTPException(
+            status_code=404,
+            detail="User not enrolled on this device — call /push first",
+        )
     background_tasks.add_task(enroll_user_task, sn, user_id, payload.finger_id)
     return {
         "message": "Enrollment started — person must scan their finger on the device",

@@ -16,14 +16,22 @@ log = logging.getLogger(__name__)
 
 
 def _connect(device):
-    zk = ZK(device.ip_address, port=device.port, timeout=30, password=device.comm_key or 0, verbose=False)
+    zk = ZK(
+        device.ip_address,
+        port=device.port,
+        timeout=30,
+        password=device.comm_key or 0,
+        verbose=False,
+    )
     try:
         return zk.connect()
     except ZKErrorResponse as exc:
         # See app/services/sdk.py:_connect for why this message match is the
         # only reliable way pyzk signals a rejected comm key.
         if str(exc) == "Unauthenticated":
-            raise ZKErrorResponse("Device refused the connection — the configured comm key is likely wrong")
+            raise ZKErrorResponse(
+                "Device refused the connection — the configured comm key is likely wrong"
+            )
         raise
 
 
@@ -69,8 +77,9 @@ BUSY_DETAIL = "Another sync is already running on this device — wait for it to
 # safe. Locking the terminal to read from it was the wrong trade.
 
 
-def record_pull_outcome(db, device, kind: str, ok: bool, detail: str,
-                        seconds: float = None) -> None:
+def record_pull_outcome(
+    db, device, kind: str, ok: bool, detail: str, seconds: float = None
+) -> None:
     """Write what a pull of ``kind`` just did onto ``Device.pull_outcomes``.
 
     Every pull here runs as a FastAPI background task, after the HTTP
@@ -102,8 +111,11 @@ def record_pull_outcome(db, device, kind: str, ok: bool, detail: str,
         device.pull_outcomes = json.dumps(outcomes)
         db.commit()
     except Exception:
-        log.exception("record_pull_outcome: could not store %s outcome for %s",
-                      kind, device.serial_number)
+        log.exception(
+            "record_pull_outcome: could not store %s outcome for %s",
+            kind,
+            device.serial_number,
+        )
         db.rollback()
 
 
@@ -117,7 +129,9 @@ def pull_employees(serial_number: str) -> dict:
     result = {"users_synced": 0, "errors": []}
     lock = _lock_for(serial_number)
     if not lock.acquire(blocking=False):
-        log.warning("pull_employees: %s is busy with another pull — refused", serial_number)
+        log.warning(
+            "pull_employees: %s is busy with another pull — refused", serial_number
+        )
         result["errors"].append(BUSY_DETAIL)
         return result
     started = time.monotonic()
@@ -131,8 +145,12 @@ def pull_employees(serial_number: str) -> dict:
 
         conn = None
         try:
-            log.info("pull_employees: connecting to %s (%s:%s)",
-                     serial_number, device.ip_address, device.port)
+            log.info(
+                "pull_employees: connecting to %s (%s:%s)",
+                serial_number,
+                device.ip_address,
+                device.port,
+            )
             conn = _connect(device)
 
             for user in conn.get_users():
@@ -159,8 +177,11 @@ def pull_employees(serial_number: str) -> dict:
             device.last_seen = datetime.now(timezone.utc)
             device.is_online = True
             db.commit()
-            log.info("pull_employees: done for %s — %d users synced",
-                     serial_number, result["users_synced"])
+            log.info(
+                "pull_employees: done for %s — %d users synced",
+                serial_number,
+                result["users_synced"],
+            )
 
         except (ZKErrorConnection, ZKNetworkError) as e:
             log.error("pull_employees: connection error for %s — %s", serial_number, e)
@@ -168,7 +189,11 @@ def pull_employees(serial_number: str) -> dict:
             device.is_online = False
             db.commit()
         except ZKErrorResponse as e:
-            log.error("pull_employees: device %s refused authentication — %s", serial_number, e)
+            log.error(
+                "pull_employees: device %s refused authentication — %s",
+                serial_number,
+                e,
+            )
             result["errors"].append(str(e))
             db.rollback()
         except Exception as e:
@@ -183,9 +208,15 @@ def pull_employees(serial_number: str) -> dict:
                     pass
 
         record_pull_outcome(
-            db, device, "employees", not result["errors"],
-            result["errors"][0] if result["errors"]
-            else f"{result['users_synced']} users read from the device",
+            db,
+            device,
+            "employees",
+            not result["errors"],
+            (
+                result["errors"][0]
+                if result["errors"]
+                else f"{result['users_synced']} users read from the device"
+            ),
             seconds=time.monotonic() - started,
         )
     finally:
@@ -200,7 +231,9 @@ def pull_attendance(serial_number: str) -> dict:
     result = {"attendance_synced": 0, "errors": []}
     lock = _lock_for(serial_number)
     if not lock.acquire(blocking=False):
-        log.warning("pull_attendance: %s is busy with another pull — refused", serial_number)
+        log.warning(
+            "pull_attendance: %s is busy with another pull — refused", serial_number
+        )
         result["errors"].append(BUSY_DETAIL)
         return result
     started = time.monotonic()
@@ -215,14 +248,21 @@ def pull_attendance(serial_number: str) -> dict:
         conn = None
         records_read = 0
         try:
-            log.info("pull_attendance: connecting to %s (%s:%s)",
-                     serial_number, device.ip_address, device.port)
+            log.info(
+                "pull_attendance: connecting to %s (%s:%s)",
+                serial_number,
+                device.ip_address,
+                device.port,
+            )
             conn = _connect(device)
 
             records = conn.get_attendance()
             records_read = len(records)
-            log.info("pull_attendance: device %s returned %d records from device",
-                     serial_number, records_read)
+            log.info(
+                "pull_attendance: device %s returned %d records from device",
+                serial_number,
+                records_read,
+            )
 
             # Load the keys already stored for this device in one query, rather
             # than a SELECT per record (20k+ round-trips otherwise).
@@ -273,18 +313,20 @@ def pull_attendance(serial_number: str) -> dict:
                 if key in existing or key in seen:
                     continue
                 seen.add(key)
-                new_rows.append(AttendanceLog(
-                    device_sn=serial_number,
-                    user_id=str(att.user_id),
-                    timestamp=att.timestamp,
-                    status=att.status,
-                    punch=att.punch,
-                    source="sdk_pull",
-                    # pyzk hands back the device's own naive wall-clock, same
-                    # as a PUSH record. Stored as-is and labelled, never
-                    # converted (D10).
-                    timezone=device.timezone or config.DEFAULT_DEVICE_TIMEZONE,
-                ))
+                new_rows.append(
+                    AttendanceLog(
+                        device_sn=serial_number,
+                        user_id=str(att.user_id),
+                        timestamp=att.timestamp,
+                        status=att.status,
+                        punch=att.punch,
+                        source="sdk_pull",
+                        # pyzk hands back the device's own naive wall-clock, same
+                        # as a PUSH record. Stored as-is and labelled, never
+                        # converted (D10).
+                        timezone=device.timezone or config.DEFAULT_DEVICE_TIMEZONE,
+                    )
+                )
 
             db.bulk_save_objects(new_rows)
             result["attendance_synced"] = len(new_rows)
@@ -292,15 +334,19 @@ def pull_attendance(serial_number: str) -> dict:
                 log.info(
                     "pull_attendance: %s — %d record(s) with PIN 0 ignored "
                     "(device event or failed verification, not attendance)",
-                    serial_number, skipped,
+                    serial_number,
+                    skipped,
                 )
 
             db.commit()
             device.last_seen = datetime.now(timezone.utc)
             device.is_online = True
             db.commit()
-            log.info("pull_attendance: done for %s — %d new records inserted",
-                     serial_number, result["attendance_synced"])
+            log.info(
+                "pull_attendance: done for %s — %d new records inserted",
+                serial_number,
+                result["attendance_synced"],
+            )
 
         except (ZKErrorConnection, ZKNetworkError) as e:
             log.error("pull_attendance: connection error for %s — %s", serial_number, e)
@@ -308,7 +354,11 @@ def pull_attendance(serial_number: str) -> dict:
             device.is_online = False
             db.commit()
         except ZKErrorResponse as e:
-            log.error("pull_attendance: device %s refused authentication — %s", serial_number, e)
+            log.error(
+                "pull_attendance: device %s refused authentication — %s",
+                serial_number,
+                e,
+            )
             result["errors"].append(str(e))
             db.rollback()
         except Exception as e:
@@ -323,10 +373,16 @@ def pull_attendance(serial_number: str) -> dict:
                     pass
 
         record_pull_outcome(
-            db, device, "attendance", not result["errors"],
-            result["errors"][0] if result["errors"]
-            else f"{result['attendance_synced']} new punches stored "
-                 f"({records_read} read from the device)",
+            db,
+            device,
+            "attendance",
+            not result["errors"],
+            (
+                result["errors"][0]
+                if result["errors"]
+                else f"{result['attendance_synced']} new punches stored "
+                f"({records_read} read from the device)"
+            ),
             seconds=time.monotonic() - started,
         )
     finally:
@@ -355,9 +411,11 @@ def store_templates(db, serial_number: str, conn) -> list:
         if not user_id:
             continue
         packed = finger.json_pack()
-        ft = db.query(FingerprintTemplate).filter_by(
-            user_id=user_id, finger_id=finger.fid
-        ).first()
+        ft = (
+            db.query(FingerprintTemplate)
+            .filter_by(user_id=user_id, finger_id=finger.fid)
+            .first()
+        )
         if ft:
             ft.valid = finger.valid
             ft.template = packed["template"]
@@ -380,7 +438,9 @@ def pull_templates(serial_number: str) -> dict:
     result = {"templates_synced": 0, "errors": []}
     lock = _lock_for(serial_number)
     if not lock.acquire(blocking=False):
-        log.warning("pull_templates: %s is busy with another pull — refused", serial_number)
+        log.warning(
+            "pull_templates: %s is busy with another pull — refused", serial_number
+        )
         result["errors"].append(BUSY_DETAIL)
         return result
     started = time.monotonic()
@@ -394,8 +454,12 @@ def pull_templates(serial_number: str) -> dict:
 
         conn = None
         try:
-            log.info("pull_templates: connecting to %s (%s:%s)",
-                     serial_number, device.ip_address, device.port)
+            log.info(
+                "pull_templates: connecting to %s (%s:%s)",
+                serial_number,
+                device.ip_address,
+                device.port,
+            )
             conn = _connect(device)
 
             rows = store_templates(db, serial_number, conn)
@@ -405,8 +469,11 @@ def pull_templates(serial_number: str) -> dict:
             device.last_seen = datetime.now(timezone.utc)
             device.is_online = True
             db.commit()
-            log.info("pull_templates: done for %s — %d templates synced",
-                     serial_number, result["templates_synced"])
+            log.info(
+                "pull_templates: done for %s — %d templates synced",
+                serial_number,
+                result["templates_synced"],
+            )
 
         except (ZKErrorConnection, ZKNetworkError) as e:
             log.error("pull_templates: connection error for %s — %s", serial_number, e)
@@ -414,7 +481,11 @@ def pull_templates(serial_number: str) -> dict:
             device.is_online = False
             db.commit()
         except ZKErrorResponse as e:
-            log.error("pull_templates: device %s refused authentication — %s", serial_number, e)
+            log.error(
+                "pull_templates: device %s refused authentication — %s",
+                serial_number,
+                e,
+            )
             result["errors"].append(str(e))
             db.rollback()
         except Exception as e:
@@ -429,14 +500,126 @@ def pull_templates(serial_number: str) -> dict:
                     pass
 
         record_pull_outcome(
-            db, device, "templates", not result["errors"],
-            result["errors"][0] if result["errors"]
-            else f"{result['templates_synced']} templates read from the device",
+            db,
+            device,
+            "templates",
+            not result["errors"],
+            (
+                result["errors"][0]
+                if result["errors"]
+                else f"{result['templates_synced']} templates read from the device"
+            ),
             seconds=time.monotonic() - started,
         )
     finally:
         db.close()
         lock.release()
+
+    return result
+
+
+def store_templates(db, serial_number: str, conn) -> list:
+    """Read every fingerprint the device holds and upsert it into
+    ``fingerprint_templates``. Returns the rows written, in device order.
+
+    The one writer for the SDK-era fingerprint table: the manual
+    "Sync Templates" route and the Sync All pull both come through here, so
+    a template read by either lands in the same row with the same key
+    (``user_id``, ``finger_id``). A finger whose device ``uid`` does not map
+    to a known ``user_id`` is skipped — there is no employee to attach it to.
+
+    Does not commit; the caller owns the transaction.
+    """
+    uid_map = {u.uid: u.user_id for u in conn.get_users()}
+    result = []
+    for finger in conn.get_templates():
+        user_id = uid_map.get(finger.uid)
+        if not user_id:
+            continue
+        packed = finger.json_pack()
+        ft = (
+            db.query(FingerprintTemplate)
+            .filter_by(user_id=user_id, finger_id=finger.fid)
+            .first()
+        )
+        if ft:
+            ft.valid = finger.valid
+            ft.template = packed["template"]
+            ft.source_device_sn = serial_number
+        else:
+            ft = FingerprintTemplate(
+                user_id=user_id,
+                finger_id=finger.fid,
+                valid=finger.valid,
+                template=packed["template"],
+                source_device_sn=serial_number,
+            )
+            db.add(ft)
+        result.append(ft)
+    return result
+
+
+def pull_templates(serial_number: str) -> dict:
+    log.info("pull_templates: starting for device %s", serial_number)
+    result = {"templates_synced": 0, "errors": []}
+    db = SessionLocal()
+    try:
+        device = db.query(Device).filter_by(serial_number=serial_number).first()
+        if not device:
+            log.warning("pull_templates: device %s not found in DB", serial_number)
+            result["errors"].append("Device not found")
+            return result
+
+        conn = None
+        try:
+            log.info(
+                "pull_templates: connecting to %s (%s:%s)",
+                serial_number,
+                device.ip_address,
+                device.port,
+            )
+            conn = _connect(device)
+            conn.disable_device()
+
+            rows = store_templates(db, serial_number, conn)
+            result["templates_synced"] = len(rows)
+
+            db.commit()
+            device.last_seen = datetime.now(timezone.utc)
+            device.is_online = True
+            db.commit()
+            log.info(
+                "pull_templates: done for %s — %d templates synced",
+                serial_number,
+                result["templates_synced"],
+            )
+
+        except (ZKErrorConnection, ZKNetworkError) as e:
+            log.error("pull_templates: connection error for %s — %s", serial_number, e)
+            result["errors"].append(str(e))
+            device.is_online = False
+            db.commit()
+        except ZKErrorResponse as e:
+            log.error(
+                "pull_templates: device %s refused authentication — %s",
+                serial_number,
+                e,
+            )
+            result["errors"].append(str(e))
+            db.rollback()
+        except Exception as e:
+            log.exception("pull_templates: unexpected error for %s", serial_number)
+            result["errors"].append(str(e))
+            db.rollback()
+        finally:
+            if conn:
+                try:
+                    conn.enable_device()
+                    conn.disconnect()
+                except Exception:
+                    pass
+    finally:
+        db.close()
 
     return result
 
@@ -449,20 +632,12 @@ def pull_device(serial_number: str) -> dict:
     keys on the ``user_id`` the employee pull just wrote, and a finger for a
     person the server has not heard of yet would be dropped.
     """
-    lock = _lock_for(serial_number)
-    if not lock.acquire(blocking=False):
-        log.warning("pull_device: %s is busy with another pull — refused", serial_number)
-        return {"users_synced": 0, "attendance_synced": 0, "templates_synced": 0,
-                "errors": [BUSY_DETAIL]}
-    try:
-        emp_result  = pull_employees(serial_number)
-        att_result  = pull_attendance(serial_number)
-        tpl_result  = pull_templates(serial_number)
-    finally:
-        lock.release()
+    emp_result = pull_employees(serial_number)
+    att_result = pull_attendance(serial_number)
+    tpl_result = pull_templates(serial_number)
     return {
-        "users_synced":      emp_result["users_synced"],
+        "users_synced": emp_result["users_synced"],
         "attendance_synced": att_result["attendance_synced"],
-        "templates_synced":  tpl_result["templates_synced"],
-        "errors":            emp_result["errors"] + att_result["errors"] + tpl_result["errors"],
+        "templates_synced": tpl_result["templates_synced"],
+        "errors": emp_result["errors"] + att_result["errors"] + tpl_result["errors"],
     }

@@ -1,4 +1,7 @@
+import json
 import logging
+import threading
+import time
 from datetime import datetime, timezone
 from zk import ZK
 from zk.exception import ZKErrorConnection, ZKErrorResponse, ZKNetworkError
@@ -23,9 +26,100 @@ def _connect(device):
         raise
 
 
+# One re-entrant lock per serial. A ZKTeco terminal serves ONE SDK session at
+# a time; a second CONNECT while a pull is reading 96k punches does not queue,
+# it times out, and in the field it has been seen to leave the terminal's SDK
+# thread wedged for ~8 minutes afterwards. So two pulls on one device never
+# overlap: the second is refused at once (see `is_pulling`, which the router
+# turns into a 409), and Sync All holds the lock across all three reads so
+# nothing slips in between them. Re-entrant so pull_device can nest the
+# per-kind pulls; process-local, which is the whole scope of a background
+# task under one uvicorn worker.
+_device_locks: dict = {}
+_device_locks_guard = threading.Lock()
+
+
+def _lock_for(serial_number: str) -> threading.RLock:
+    with _device_locks_guard:
+        lock = _device_locks.get(serial_number)
+        if lock is None:
+            lock = _device_locks[serial_number] = threading.RLock()
+        return lock
+
+
+def is_pulling(serial_number: str) -> bool:
+    """True while a pull of any kind holds this device's SDK session."""
+    lock = _lock_for(serial_number)
+    if lock.acquire(blocking=False):
+        lock.release()
+        return False
+    return True
+
+
+BUSY_DETAIL = "Another sync is already running on this device — wait for it to finish"
+
+# The pulls below deliberately do NOT call conn.disable_device(). They only
+# read, and disabling locks the terminal's keypad and sensor for the whole
+# read — minutes, on a device holding a year of punches. Worse, the matching
+# enable_device() lives in a `finally`, and a background task that is killed
+# mid-read (a dev-server reload, a deploy, an OOM) never reaches it: the
+# terminal stays locked until somebody notices. A punch made during a read is
+# simply picked up on the next one; the dedup in pull_attendance makes that
+# safe. Locking the terminal to read from it was the wrong trade.
+
+
+def record_pull_outcome(db, device, kind: str, ok: bool, detail: str,
+                        seconds: float = None) -> None:
+    """Write what a pull of ``kind`` just did onto ``Device.pull_outcomes``.
+
+    Every pull here runs as a FastAPI background task, after the HTTP
+    response has already told the operator "started". Its return value is
+    dropped on the floor, so without this the only record of "timed out" or
+    "comm key refused" is a line in the server log — and the Devices page
+    shows a sync that silently never happened. This is the one place the
+    outcome is kept, and the UI reads it back from DeviceOut.pull_outcomes.
+
+    Never raises: a failure to record the outcome must not turn a pull that
+    worked into one that looks like it crashed.
+    """
+    try:
+        try:
+            outcomes = json.loads(device.pull_outcomes) if device.pull_outcomes else {}
+        except ValueError:
+            outcomes = {}
+        if not isinstance(outcomes, dict):
+            outcomes = {}
+        outcomes[kind] = {
+            "at": datetime.now(timezone.utc).isoformat(),
+            "ok": bool(ok),
+            # A traceback-sized message is a log line's job, not a table cell's.
+            "detail": (detail or "")[:500],
+            # How long the device was held. The number an operator needs when
+            # deciding whether a year of backlog should be cleared off it.
+            "seconds": round(seconds, 1) if seconds is not None else None,
+        }
+        device.pull_outcomes = json.dumps(outcomes)
+        db.commit()
+    except Exception:
+        log.exception("record_pull_outcome: could not store %s outcome for %s",
+                      kind, device.serial_number)
+        db.rollback()
+
+
+def _connection_error_detail(device, exc) -> str:
+    """pyzk's network errors are terse ("timed out"); say what was dialled."""
+    return f"Could not connect to {device.ip_address}:{device.port} — {exc}"
+
+
 def pull_employees(serial_number: str) -> dict:
     log.info("pull_employees: starting for device %s", serial_number)
     result = {"users_synced": 0, "errors": []}
+    lock = _lock_for(serial_number)
+    if not lock.acquire(blocking=False):
+        log.warning("pull_employees: %s is busy with another pull — refused", serial_number)
+        result["errors"].append(BUSY_DETAIL)
+        return result
+    started = time.monotonic()
     db = SessionLocal()
     try:
         device = db.query(Device).filter_by(serial_number=serial_number).first()
@@ -39,7 +133,6 @@ def pull_employees(serial_number: str) -> dict:
             log.info("pull_employees: connecting to %s (%s:%s)",
                      serial_number, device.ip_address, device.port)
             conn = _connect(device)
-            conn.disable_device()
 
             for user in conn.get_users():
                 # Deliberately the same writer the ADMS `tabledata&tablename=user`
@@ -70,7 +163,7 @@ def pull_employees(serial_number: str) -> dict:
 
         except (ZKErrorConnection, ZKNetworkError) as e:
             log.error("pull_employees: connection error for %s — %s", serial_number, e)
-            result["errors"].append(str(e))
+            result["errors"].append(_connection_error_detail(device, e))
             device.is_online = False
             db.commit()
         except ZKErrorResponse as e:
@@ -84,12 +177,19 @@ def pull_employees(serial_number: str) -> dict:
         finally:
             if conn:
                 try:
-                    conn.enable_device()
                     conn.disconnect()
                 except Exception:
                     pass
+
+        record_pull_outcome(
+            db, device, "employees", not result["errors"],
+            result["errors"][0] if result["errors"]
+            else f"{result['users_synced']} users read from the device",
+            seconds=time.monotonic() - started,
+        )
     finally:
         db.close()
+        lock.release()
 
     return result
 
@@ -97,6 +197,12 @@ def pull_employees(serial_number: str) -> dict:
 def pull_attendance(serial_number: str) -> dict:
     log.info("pull_attendance: starting for device %s", serial_number)
     result = {"attendance_synced": 0, "errors": []}
+    lock = _lock_for(serial_number)
+    if not lock.acquire(blocking=False):
+        log.warning("pull_attendance: %s is busy with another pull — refused", serial_number)
+        result["errors"].append(BUSY_DETAIL)
+        return result
+    started = time.monotonic()
     db = SessionLocal()
     try:
         device = db.query(Device).filter_by(serial_number=serial_number).first()
@@ -106,15 +212,16 @@ def pull_attendance(serial_number: str) -> dict:
             return result
 
         conn = None
+        records_read = 0
         try:
             log.info("pull_attendance: connecting to %s (%s:%s)",
                      serial_number, device.ip_address, device.port)
             conn = _connect(device)
-            conn.disable_device()
 
             records = conn.get_attendance()
+            records_read = len(records)
             log.info("pull_attendance: device %s returned %d records from device",
-                     serial_number, len(records))
+                     serial_number, records_read)
 
             # Load the keys already stored for this device in one query, rather
             # than a SELECT per record (20k+ round-trips otherwise).
@@ -178,7 +285,7 @@ def pull_attendance(serial_number: str) -> dict:
 
         except (ZKErrorConnection, ZKNetworkError) as e:
             log.error("pull_attendance: connection error for %s — %s", serial_number, e)
-            result["errors"].append(str(e))
+            result["errors"].append(_connection_error_detail(device, e))
             device.is_online = False
             db.commit()
         except ZKErrorResponse as e:
@@ -192,12 +299,20 @@ def pull_attendance(serial_number: str) -> dict:
         finally:
             if conn:
                 try:
-                    conn.enable_device()
                     conn.disconnect()
                 except Exception:
                     pass
+
+        record_pull_outcome(
+            db, device, "attendance", not result["errors"],
+            result["errors"][0] if result["errors"]
+            else f"{result['attendance_synced']} new punches stored "
+                 f"({records_read} read from the device)",
+            seconds=time.monotonic() - started,
+        )
     finally:
         db.close()
+        lock.release()
 
     return result
 
@@ -244,6 +359,12 @@ def store_templates(db, serial_number: str, conn) -> list:
 def pull_templates(serial_number: str) -> dict:
     log.info("pull_templates: starting for device %s", serial_number)
     result = {"templates_synced": 0, "errors": []}
+    lock = _lock_for(serial_number)
+    if not lock.acquire(blocking=False):
+        log.warning("pull_templates: %s is busy with another pull — refused", serial_number)
+        result["errors"].append(BUSY_DETAIL)
+        return result
+    started = time.monotonic()
     db = SessionLocal()
     try:
         device = db.query(Device).filter_by(serial_number=serial_number).first()
@@ -257,7 +378,6 @@ def pull_templates(serial_number: str) -> dict:
             log.info("pull_templates: connecting to %s (%s:%s)",
                      serial_number, device.ip_address, device.port)
             conn = _connect(device)
-            conn.disable_device()
 
             rows = store_templates(db, serial_number, conn)
             result["templates_synced"] = len(rows)
@@ -271,7 +391,7 @@ def pull_templates(serial_number: str) -> dict:
 
         except (ZKErrorConnection, ZKNetworkError) as e:
             log.error("pull_templates: connection error for %s — %s", serial_number, e)
-            result["errors"].append(str(e))
+            result["errors"].append(_connection_error_detail(device, e))
             device.is_online = False
             db.commit()
         except ZKErrorResponse as e:
@@ -285,12 +405,19 @@ def pull_templates(serial_number: str) -> dict:
         finally:
             if conn:
                 try:
-                    conn.enable_device()
                     conn.disconnect()
                 except Exception:
                     pass
+
+        record_pull_outcome(
+            db, device, "templates", not result["errors"],
+            result["errors"][0] if result["errors"]
+            else f"{result['templates_synced']} templates read from the device",
+            seconds=time.monotonic() - started,
+        )
     finally:
         db.close()
+        lock.release()
 
     return result
 
@@ -303,9 +430,17 @@ def pull_device(serial_number: str) -> dict:
     keys on the ``user_id`` the employee pull just wrote, and a finger for a
     person the server has not heard of yet would be dropped.
     """
-    emp_result  = pull_employees(serial_number)
-    att_result  = pull_attendance(serial_number)
-    tpl_result  = pull_templates(serial_number)
+    lock = _lock_for(serial_number)
+    if not lock.acquire(blocking=False):
+        log.warning("pull_device: %s is busy with another pull — refused", serial_number)
+        return {"users_synced": 0, "attendance_synced": 0, "templates_synced": 0,
+                "errors": [BUSY_DETAIL]}
+    try:
+        emp_result  = pull_employees(serial_number)
+        att_result  = pull_attendance(serial_number)
+        tpl_result  = pull_templates(serial_number)
+    finally:
+        lock.release()
     return {
         "users_synced":      emp_result["users_synced"],
         "attendance_synced": att_result["attendance_synced"],

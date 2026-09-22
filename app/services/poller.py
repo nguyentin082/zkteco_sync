@@ -562,6 +562,12 @@ def store_templates(db, serial_number: str, conn) -> list:
 def pull_templates(serial_number: str) -> dict:
     log.info("pull_templates: starting for device %s", serial_number)
     result = {"templates_synced": 0, "errors": []}
+    lock = _lock_for(serial_number)
+    if not lock.acquire(blocking=False):
+        log.warning("pull_templates: %s is busy with another pull — refused", serial_number)
+        result["errors"].append(BUSY_DETAIL)
+        return result
+    started = time.monotonic()
     db = SessionLocal()
     try:
         device = db.query(Device).filter_by(serial_number=serial_number).first()
@@ -579,7 +585,6 @@ def pull_templates(serial_number: str) -> dict:
                 device.port,
             )
             conn = _connect(device)
-            conn.disable_device()
 
             rows = store_templates(db, serial_number, conn)
             result["templates_synced"] = len(rows)
@@ -596,7 +601,7 @@ def pull_templates(serial_number: str) -> dict:
 
         except (ZKErrorConnection, ZKNetworkError) as e:
             log.error("pull_templates: connection error for %s — %s", serial_number, e)
-            result["errors"].append(str(e))
+            result["errors"].append(_connection_error_detail(device, e))
             device.is_online = False
             db.commit()
         except ZKErrorResponse as e:
@@ -614,12 +619,19 @@ def pull_templates(serial_number: str) -> dict:
         finally:
             if conn:
                 try:
-                    conn.enable_device()
                     conn.disconnect()
                 except Exception:
                     pass
+
+        record_pull_outcome(
+            db, device, "templates", not result["errors"],
+            result["errors"][0] if result["errors"]
+            else f"{result['templates_synced']} templates read from the device",
+            seconds=time.monotonic() - started,
+        )
     finally:
         db.close()
+        lock.release()
 
     return result
 
@@ -632,9 +644,21 @@ def pull_device(serial_number: str) -> dict:
     keys on the ``user_id`` the employee pull just wrote, and a finger for a
     person the server has not heard of yet would be dropped.
     """
-    emp_result = pull_employees(serial_number)
-    att_result = pull_attendance(serial_number)
-    tpl_result = pull_templates(serial_number)
+    lock = _lock_for(serial_number)
+    if not lock.acquire(blocking=False):
+        log.warning("pull_device: %s is busy with another pull — refused", serial_number)
+        return {
+            "users_synced": 0,
+            "attendance_synced": 0,
+            "templates_synced": 0,
+            "errors": [BUSY_DETAIL],
+        }
+    try:
+        emp_result = pull_employees(serial_number)
+        att_result = pull_attendance(serial_number)
+        tpl_result = pull_templates(serial_number)
+    finally:
+        lock.release()
     return {
         "users_synced": emp_result["users_synced"],
         "attendance_synced": att_result["attendance_synced"],

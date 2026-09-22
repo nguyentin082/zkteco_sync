@@ -57,10 +57,12 @@ from app.services import (
     pairing,
     provisioning,
 )
+from app.services import poller
 from app.services.poller import (
     pull_attendance,
     pull_device,
     pull_employees,
+    record_pull_outcome,
     store_templates,
 )
 from app.services.sdk import device_connection, enroll_user_task

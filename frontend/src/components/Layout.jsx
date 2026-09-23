@@ -35,12 +35,13 @@ export default function Layout() {
             <Brand nameClassName="font-semibold text-gray-900" />
             <div className="flex items-center gap-4">
               <span className="text-sm text-gray-500">{user?.username}</span>
-              {/* The app's secondary button, the same one the pages use for
-                  Export and Cancel: signing out is an action, and it read as
-                  a piece of text sitting next to the username. */}
+              {/* The app's secondary button in red: signing out is a leaving
+                  action, and this one sits on every page, so it is outlined
+                  rather than filled — the same restraint the destructive
+                  actions on the pages show. */}
               <button
                 onClick={logout}
-                className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                className="px-3 py-1.5 rounded-lg border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
               >
                 Logout
               </button>

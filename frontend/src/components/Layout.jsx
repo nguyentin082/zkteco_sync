@@ -1,4 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import Brand from './Brand'
 import { api } from '../api'
 import { useAuth } from '../auth'
 
@@ -31,7 +32,7 @@ export default function Layout() {
         <div className="max-w-6xl mx-auto px-6">
           {/* Top bar */}
           <div className="flex items-center justify-between h-14">
-            <span className="font-semibold text-gray-900">ZKTeco Sync</span>
+            <Brand nameClassName="font-semibold text-gray-900" />
             <div className="flex items-center gap-4">
               <span className="text-sm text-gray-500">{user?.username}</span>
               <button

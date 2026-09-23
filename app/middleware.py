@@ -162,7 +162,7 @@ _NAV_MODES = {"navigate"}
 _SAFE_METHODS = {"GET", "HEAD"}
 
 # StaticFiles owns everything under here plus anything that looks like a
-# file. favicon.svg and icons.svg are covered by the extension test.
+# file. favicon.png and icons.svg are covered by the extension test.
 _ASSET_PREFIX = "/assets/"
 
 

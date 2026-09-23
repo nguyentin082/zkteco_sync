@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
+import Brand from '../components/Brand'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -31,8 +32,16 @@ export default function Login() {
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
       <div className="bg-white rounded-2xl shadow-lg w-full max-w-sm p-8">
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-semibold text-gray-900">ZKTeco Sync</h1>
-          <p className="text-sm text-gray-500 mt-1">Sign in to continue</p>
+          {/* The same lockup as the header, one size up: whoever signs in
+              here sees the header next, and the two must not disagree. */}
+          <h1>
+            <Brand
+              stacked
+              logoClassName="h-9"
+              nameClassName="text-xl font-semibold text-gray-900"
+            />
+          </h1>
+          <p className="text-sm text-gray-500 mt-2">Sign in to continue</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

@@ -35,9 +35,12 @@ export default function Layout() {
             <Brand nameClassName="font-semibold text-gray-900" />
             <div className="flex items-center gap-4">
               <span className="text-sm text-gray-500">{user?.username}</span>
+              {/* The app's secondary button, the same one the pages use for
+                  Export and Cancel: signing out is an action, and it read as
+                  a piece of text sitting next to the username. */}
               <button
                 onClick={logout}
-                className="text-sm text-gray-500 hover:text-gray-800 transition-colors"
+                className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
               >
                 Logout
               </button>

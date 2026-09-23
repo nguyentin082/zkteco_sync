@@ -18,7 +18,7 @@ This app runs both listeners. Devices push attendance events the moment they hap
 - **Real-time attendance** via ADMS push from devices
 - **On-demand sync** — pull employees, attendance, and fingerprint templates from any device
 - **Employee management** — view all employees, push to specific devices, remove from devices
-- **Excel export** — the monthly timesheet, as a formatted `.xlsx`. *Daily summary* gives one row per person per day (first punch in, last punch out, hours, punch count); *All punches* gives every record. Both cover the whole filter (device, employee, date range), not the page on screen. The daily pairing is by clock, not by the device's status field — terminals where nobody presses the mode key stamp every punch identically.
+- **Excel export** — the monthly timesheet, as a formatted `.xlsx`, reproducing the report ZKTime.Net produced column for column: a row for every person on every day of the range, with hours worked, hours owed, overtime, lateness, early departures and absences scored against the shift set in `.env` (`WORK_SHIFT_START` and friends). One button, one kind of file. It covers the whole filter (device, employee, date range), not the page on screen, and days are paired by clock rather than by the device's status field — terminals where nobody presses the mode key stamp every punch identically.
 - **Fingerprint templates** — pull from one device, push to others (one master copy per finger)
 - **Live enrollment** — trigger fingerprint enrollment on a device from the UI
 - **Device control** — unlock door, set clock, write LCD message, restart, queue raw commands

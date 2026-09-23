@@ -35,9 +35,6 @@ export default function Attendance() {
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
-  // 'daily' is the timesheet HR reads; 'raw' is every punch, for the day
-  // somebody disputes what the summary says.
-  const [exportMode, setExportMode] = useState('daily')
   // Kept apart from `error`, which the table area renders in place of the
   // rows: a failed export must not blank out the records that are on screen.
   const [exportError, setExportError] = useState('')
@@ -84,7 +81,6 @@ export default function Attendance() {
     setExportError('')
     try {
       const { blob, filename } = await api.attendance.exportXlsx({
-        mode: exportMode,
         ...(filters.device_sn ? { device_sn: filters.device_sn } : {}),
         ...(filters.user_id ? { user_id: filters.user_id } : {}),
         ...(filters.from_date ? { from_date: filters.from_date + ':00' } : {}),
@@ -125,28 +121,37 @@ export default function Attendance() {
         <h1 className="text-xl font-semibold text-gray-900">Attendance</h1>
         <div className="flex items-center gap-3">
           <span className="text-sm text-gray-400">{total.toLocaleString()} records</span>
-          <select
-            value={exportMode}
-            onChange={(e) => setExportMode(e.target.value)}
-            aria-label="What the export contains"
-            className="input text-sm py-1.5"
-          >
-            <option value="daily">Daily summary</option>
-            <option value="raw">All punches</option>
-          </select>
           <button
             onClick={exportExcel}
             disabled={exporting || loading || total === 0}
             title={
               total === 0
                 ? 'Nothing matches the current filter'
-                : exportMode === 'daily'
-                  ? 'One row per person per day: first punch in, last punch out'
-                  : 'Every punch matching the filter, one per row'
+                : 'The monthly timesheet: a row per person per day, scored against the shift — hours, lateness, absences'
             }
-            className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
           >
-            {exporting ? 'Exporting…' : 'Export Excel'}
+            {/* A sheet with a download arrow — what the button does, at a
+                glance. aria-hidden because the label beside it already says
+                it, and a screen reader should not hear it twice. */}
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              className={exporting ? 'animate-pulse' : undefined}
+            >
+              <path d="M9 1.75H4a1.25 1.25 0 0 0-1.25 1.25v10A1.25 1.25 0 0 0 4 14.25h8a1.25 1.25 0 0 0 1.25-1.25V6z" />
+              <path d="M9 1.75V6h4.25" />
+              <path d="M8 8.5v3.75" />
+              <path d="M6.25 10.5 8 12.25l1.75-1.75" />
+            </svg>
+            {exporting ? 'Exporting…' : 'Export timesheet'}
           </button>
         </div>
       </div>

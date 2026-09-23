@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
-from typing import Literal, Optional, List
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
@@ -9,7 +9,7 @@ from app.deps import require_auth
 
 from app import audit, config
 from app.database import get_db
-from app.models import AttendanceLog, Device, Employee, User
+from app.models import AttendanceLog, Device, DeviceEmployee, Employee, User
 from app.net import client_ip
 from app.schemas import AttendanceOut
 
@@ -66,73 +66,59 @@ def list_attendance(
 # ---------------------------------------------------------------------------
 # Excel export
 # ---------------------------------------------------------------------------
-# The monthly "send this to payroll" file, in two shapes.
+# The monthly "send this to payroll" file: the timesheet, reproducing the
+# report ZKTime.Net used to produce column for column. A row for every person
+# on every day of the range, with hours worked, hours owed, lateness, early
+# departures and absences scored against the shift in app/config.py. HR
+# reconciles it against payroll and against older files from the terminal's
+# own software, so its fourteen Vietnamese columns are a contract and not a
+# preference.
 #
-#   daily  (default) — one row per person per day: first punch of the day as
-#                      check-in, last punch as check-out. This is the timesheet
-#                      ZKTime.Net produced and the one HR actually reads.
-#   raw              — every punch, one per row. Kept because the daily sheet
-#                      is a summary, and the day somebody disputes is the day
-#                      you need the punches behind it.
+# One shape, deliberately. A second "every punch, one per row" workbook was
+# built and then removed: it made the operator choose between two files on
+# every export, and the punches behind any row of the timesheet are already on
+# the screen it is exported from.
 #
-# Why first/last rather than the device's own status field: on this
-# installation 96,002 of 96,075 records carry status=1, because nobody presses
-# the mode key on the terminal. Selecting rows by status would return a sheet
-# of check-outs with no check-ins at all. The clock is the only trustworthy
-# signal, so it is the one used.
+# Why the day is paired by first/last punch rather than by the device's own
+# status field: on this installation 96,002 of 96,075 records carry status=1,
+# because nobody presses the mode key on the terminal. Selecting rows by
+# status would return a sheet of check-outs with no check-ins at all. The
+# clock is the only trustworthy signal, so it is the one used.
 #
-# Either shape covers the whole result of the filter, never the page on
-# screen: an operator who picks a month and 900 punches match must get the
-# whole month, not the 50 rows the table happens to be showing.
+# The sheet covers the whole result of the filter, never the page on screen:
+# an operator who picks a month and 900 punches match must get the whole
+# month, not the 50 rows the table happens to be showing.
 
-_STATUS_LABELS = {
-    0: "Check In",
-    1: "Check Out",
-    2: "Break Out",
-    3: "Break In",
-    4: "OT In",
-    5: "OT Out",
-}
-
-# Verification mode, as the SDK/ATTLOG `punch` field reports it. Unknown
-# codes are rendered as the raw number rather than guessed at or blanked —
-# the same rule the rest of the app follows for device-reported values.
-_PUNCH_LABELS = {
-    1: "Fingerprint",
-    3: "Password",
-    4: "Card",
-    15: "Face",
-}
-
-_RAW_COLUMNS = [
-    ("Employee ID", 16),
-    ("Employee Name", 28),
-    ("Timestamp", 22),
-    ("Timezone", 22),
-    ("Status", 14),
-    ("Verification", 16),
-    ("Device", 26),
-    ("Device SN", 20),
-    ("Source", 14),
+# The monthly report, column for column as ZKTime.Net wrote it — Vietnamese
+# headers, trailing spaces and all. HR reconciles this sheet against payroll
+# and against older files from the terminal's own software, so the layout is
+# a contract, not a preference: same fourteen columns, same order, same
+# wording. The widths are ours (ZKTime.Net left every column at the default,
+# which clips the names).
+_REPORT_COLUMNS = [
+    ("ID nhân viên ", 12),      # employee PIN, as text — "007" is not 7
+    ("Họ và tên", 26),
+    ("Ngày", 11),               # dd/mm/yyyy
+    ("Bảng thời gian", 14),     # timetable name; blank on a rest day
+    ("Actual Work", 11),        # hours actually worked, less the break
+    ("Require Work", 12),       # the paid length of the shift
+    ("Tăng ca loại 1 ", 13),    # overtime tiers 1-3 — see _score_day
+    ("Tăng ca loại 2 ", 13),
+    ("Tăng ca loại 3 ", 13),
+    ("Vô trễ", 9),              # late in
+    ("Ra sớm", 9),              # early out
+    ("Vắng mặt ", 10),          # absent
+    ("Check-In", 10),
+    ("Check-Out", 10),
 ]
 
-_DAILY_COLUMNS = [
-    ("Date", 12),
-    ("Employee ID", 16),
-    ("Employee Name", 28),
-    ("Check In", 11),
-    ("Check Out", 11),
-    ("Hours", 9),
-    ("Punches", 9),
-    ("Check In Device", 24),
-    ("Check Out Device", 24),
-    ("Timezone", 22),
-]
-
-_DATE_FORMAT = "yyyy-mm-dd"
-_TIME_FORMAT = "hh:mm:ss"
-_TIMESTAMP_FORMAT = "yyyy-mm-dd hh:mm:ss"
-_HOURS_FORMAT = "0.00"
+# Every cell in the report is text (`@`), including the durations. They are
+# H:MM counts of elapsed time, not clock times: written as real values, Excel
+# would render 8:14 worked as 08:14 in the morning, and 25 hours of overtime
+# would wrap round to 1:00. ZKTime.Net wrote text for the same reason.
+_TEXT_FORMAT = "@"
+_REPORT_DATE_FORMAT = "%d/%m/%Y"
+_REPORT_CLOCK_FORMAT = "%H:%M"
 
 _XLSX_MEDIA_TYPE = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -143,7 +129,7 @@ _XLSX_MEDIA_TYPE = (
 _EXPORT_BATCH = 2000
 
 
-def _export_filename(mode, device_sn, user_id, from_date, to_date) -> str:
+def _export_filename(device_sn, user_id, from_date, to_date) -> str:
     """An ASCII-only, filesystem-safe name that says what is inside.
 
     Deliberately not derived from the device or employee *name*: those are
@@ -152,7 +138,7 @@ def _export_filename(mode, device_sn, user_id, from_date, to_date) -> str:
     serial and the PIN are already safe identifiers, and the file's own
     columns carry the readable names.
     """
-    parts = ["attendance-daily" if mode == "daily" else "attendance-punches"]
+    parts = ["attendance-timesheet"]
     if device_sn:
         parts.append(device_sn)
     if user_id:
@@ -169,21 +155,6 @@ def _export_filename(mode, device_sn, user_id, from_date, to_date) -> str:
         for p in parts
     )
     return f"{safe}.xlsx"
-
-
-def _lookups(db):
-    """Names and zones, resolved once for the whole export.
-
-    The naive version of this is a SELECT per record, which on a month of
-    punches is thousands of round trips for a handful of distinct answers.
-    """
-    employee_names = dict(db.query(Employee.user_id, Employee.name).all())
-    device_zones = dict(db.query(Device.serial_number, Device.timezone).all())
-    device_names = {
-        sn: (name or sn)
-        for sn, name in db.query(Device.serial_number, Device.name).all()
-    }
-    return employee_names, device_zones, device_names
 
 
 def _zone_of(row, device_zones):
@@ -206,94 +177,6 @@ def _wall_clock(row):
     14:48 punch to some other hour — the exact bug D10 exists to prevent.
     """
     return row.timestamp.replace(tzinfo=None) if row.timestamp else None
-
-
-def _start_sheet(wb, title, columns):
-    """A styled, frozen, sized header row — the sheet ready for data."""
-    from openpyxl.cell import WriteOnlyCell
-    from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.utils import get_column_letter
-
-    ws = wb.create_sheet(title=title)
-
-    # Before the first append, not after: in write-only mode the sheet's view
-    # settings are serialised as soon as a row is written, so a freeze set at
-    # the end is silently dropped and the recipient scrolls a month of punches
-    # with no header in sight.
-    ws.freeze_panes = "A2"
-
-    for index, (_, width) in enumerate(columns, start=1):
-        ws.column_dimensions[get_column_letter(index)].width = width
-
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill("solid", fgColor="1F4E78")
-    header_align = Alignment(horizontal="center")
-
-    header = []
-    for title_text, _ in columns:
-        cell = WriteOnlyCell(ws, value=title_text)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = header_align
-        header.append(cell)
-    ws.append(header)
-    return ws
-
-
-def _finish_sheet(ws, columns, data_rows):
-    """Close the sheet off with a filter over the data that is actually in it."""
-    from openpyxl.utils import get_column_letter
-
-    last_column = get_column_letter(len(columns))
-    # Set explicitly: in write-only mode the sheet has no computed dimensions
-    # to read back, and an auto_filter over the header alone would leave the
-    # recipient unable to filter the month.
-    ws.auto_filter.ref = f"A1:{last_column}{data_rows + 1}"
-
-
-def _formatted(ws, value, number_format):
-    """A cell that carries a real date/time/number, not a rendered string —
-    so the recipient can sort, filter and pivot the month in Excel."""
-    from openpyxl.cell import WriteOnlyCell
-
-    cell = WriteOnlyCell(ws, value=value)
-    cell.number_format = number_format
-    return cell
-
-
-def _build_raw_workbook(db, rows) -> BytesIO:
-    """Every punch, one per row, oldest first."""
-    from openpyxl import Workbook
-
-    # write_only: cells are streamed to the sheet as they are appended instead
-    # of being held as objects until save(). What keeps a large export inside
-    # a sane amount of memory.
-    wb = Workbook(write_only=True)
-    ws = _start_sheet(wb, "Attendance", _RAW_COLUMNS)
-
-    employee_names, device_zones, device_names = _lookups(db)
-
-    count = 0
-    for row in rows:
-        ws.append([
-            row.user_id,
-            employee_names.get(row.user_id) or row.user_id,
-            _formatted(ws, _wall_clock(row), _TIMESTAMP_FORMAT),
-            _zone_of(row, device_zones),
-            _STATUS_LABELS.get(row.status, f"Status {row.status}"),
-            _PUNCH_LABELS.get(row.punch, f"Mode {row.punch}"),
-            device_names.get(row.device_sn, row.device_sn),
-            row.device_sn,
-            row.source,
-        ])
-        count += 1
-
-    _finish_sheet(ws, _RAW_COLUMNS, count)
-
-    buffer = BytesIO()
-    wb.save(buffer)
-    buffer.seek(0)
-    return buffer
 
 
 def _daily_groups(rows, device_zones):
@@ -339,53 +222,302 @@ def _daily_groups(rows, device_zones):
     return groups
 
 
-def _build_daily_workbook(db, rows) -> BytesIO:
-    """One row per person per day: first punch in, last punch out."""
+# ---------------------------------------------------------------------------
+# Scoring a day against the shift
+# ---------------------------------------------------------------------------
+# Every number in the report is a pair of punches measured against the shift
+# configured in app/config.py. The rules below were not invented: they are the
+# ones the operator's own ZKTime.Net export was scored by, recovered by
+# reading that file (August 2026, 21 people, 651 rows) and checking each
+# formula against every row in it whose value was not zero.
+
+
+def _clock(value) -> int:
+    """A time of day as minutes since midnight."""
+    return value.hour * 60 + value.minute
+
+
+def _overlap(start: int, end: int, window_start: int, window_end: int) -> int:
+    """Minutes the span [start, end] spends inside [window_start, window_end]."""
+    return max(0, min(end, window_end) - max(start, window_start))
+
+
+def _paid(start: int, end: int) -> int:
+    """Minutes between two points of the day that count as work.
+
+    The break is unpaid, so whatever part of it falls inside the span does not
+    count. This is what makes leaving at 12:01 count as 4:30 early rather than
+    5:29: the hour that would have gone on lunch was never theirs to work.
+    """
+    if end <= start:
+        return 0
+    break_start = _clock(config.WORK_BREAK_START)
+    break_end = _clock(config.WORK_BREAK_END)
+    return end - start - _overlap(start, end, break_start, break_end)
+
+
+def _hm(minutes) -> str:
+    """Minutes → the report's H:MM, e.g. 0 → "0:00", 494 → "8:14".
+
+    Hours are not zero-padded and not capped at 24: this is a duration, not a
+    time of day.
+    """
+    minutes = max(0, int(minutes))
+    return f"{minutes // 60}:{minutes % 60:02d}"
+
+
+def _score_day(first, last, punches: int, is_work_day: bool) -> dict:
+    """The numbers for one person on one day.
+
+    ``first``/``last`` are that day's earliest and latest punch as the
+    device's own clock recorded them, or None if the person never punched.
+
+    A day with a single punch is not a short day, it is half a record — the
+    person forgot to punch out, or the terminal missed it. ZKTime.Net scored
+    those as a whole day absent, with no hours and no lateness, and so does
+    this: inventing a check-out would put hours nobody worked onto a payroll
+    sheet, and charging lateness for a day already counted absent would take
+    the same hour off twice.
+    """
+    shift_start = _clock(config.WORK_SHIFT_START)
+    shift_end = _clock(config.WORK_SHIFT_END)
+    break_start = _clock(config.WORK_BREAK_START)
+    break_end = _clock(config.WORK_BREAK_END)
+
+    required = _paid(shift_start, shift_end) if is_work_day else 0
+
+    came = _clock(first) if first is not None else None
+    went = _clock(last) if last is not None else None
+
+    # Two punches in the same minute are the same broken record as one:
+    # somebody touched the terminal twice on their way in. There is no span
+    # there to pay, so the day is scored as the absence it is rather than as
+    # a worked day of no hours.
+    paired = punches >= 2 and came is not None and went is not None and went > came
+
+    if not paired:
+        return {
+            "paired": False,
+            "actual": 0,
+            "required": required,
+            "late": 0,
+            "early": 0,
+            "absent": required,
+        }
+
+    # Hours worked are the span between the two punches, less the break — and
+    # the break only comes off somebody who was here for the whole of it.
+    # Leave at 12:01 and the 3:41 already worked stands whole; arrive at 12:04
+    # and nothing is deducted either, because the lunch hour was already gone
+    # by the time they got here. Counted from the punches themselves, not from
+    # the shift: arriving at 08:03 for an 08:30 shift earns those 27 minutes,
+    # exactly as the ZKTime.Net sheet paid them.
+    #
+    # Lateness and early departure below take the opposite view of a part-used
+    # break, subtracting whatever slice of it falls in the missing time — so a
+    # 12:04 arrival is 3:30 late, not 3:34. Both halves are ZKTime.Net's, read
+    # off its own numbers; they are asymmetric because it never pays an hour
+    # that was not worked, and never charges one that was not owed.
+    actual = went - came
+    if came <= break_start and went >= break_end:
+        actual -= break_end - break_start
+
+    return {
+        "paired": True,
+        "actual": actual,
+        "required": required,
+        "late": _paid(shift_start, came) if is_work_day else 0,
+        "early": _paid(went, shift_end) if is_work_day else 0,
+        "absent": 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Who, and which days
+# ---------------------------------------------------------------------------
+# A timesheet is a grid, not a list of punches: a row for every person on
+# every day of the month, whether or not they came in. Somebody who was absent
+# all month has no punches at all, and they are exactly who the "Vắng mặt"
+# column exists for. So the rows come from the roster and the calendar, and
+# the punches are laid on top of them.
+
+
+def _report_days(db, query, from_date, to_date) -> list:
+    """Every calendar day the report has rows for.
+
+    The filter's own dates when it has them. Without them the range comes from
+    the punches themselves, so an unfiltered export still produces a bounded
+    sheet instead of a grid over all of time.
+    """
+    from sqlalchemy import func
+
+    start = from_date.date() if from_date else None
+    end = to_date.date() if to_date else None
+
+    if start is None or end is None:
+        earliest, latest = query.with_entities(
+            func.min(AttendanceLog.timestamp), func.max(AttendanceLog.timestamp)
+        ).one()
+        if start is None and earliest is not None:
+            start = earliest.date()
+        if end is None and latest is not None:
+            end = latest.date()
+
+    if start is None or end is None or end < start:
+        return []
+
+    return [start + timedelta(days=n) for n in range((end - start).days + 1)]
+
+
+def _roster_key(user_id: str):
+    """PINs sort as numbers when they are numbers: 2, then 13, then 211."""
+    return (0, int(user_id), "") if user_id.isdigit() else (1, 0, user_id)
+
+
+def _report_people(db, device_sn, user_id, employee_names, seen_user_ids) -> list:
+    """``[(pin, name)]`` the report has rows for, in PIN order.
+
+    One person when the filter names one. Otherwise the whole roster, narrowed
+    to a device's enrolled users when the filter names a device — but never
+    narrowed past somebody who actually punched: anyone present in the
+    selected records gets rows whether or not the roster knows their name.
+    """
+    if user_id:
+        ids = {user_id}
+    else:
+        ids = set(employee_names)
+        if device_sn:
+            enrolled = {
+                row[0]
+                for row in db.query(DeviceEmployee.user_id)
+                .filter(DeviceEmployee.device_sn == device_sn)
+                .all()
+            }
+            # An empty enrolment table means this device's users have never
+            # been synced, not that nobody is enrolled on it. Narrowing by it
+            # then would hand back an empty sheet.
+            if enrolled:
+                ids &= enrolled
+        ids |= set(seen_user_ids)
+
+    return sorted(
+        ((pin, employee_names.get(pin) or pin) for pin in ids),
+        key=lambda person: _roster_key(person[0]),
+    )
+
+
+def _start_report_sheet(wb, title, columns):
+    """The header row, styled as ZKTime.Net styled it: Tahoma 8 on grey,
+    centred, thin-bordered, and text-formatted like everything below it."""
+    from openpyxl.cell import WriteOnlyCell
+    from openpyxl.styles import Alignment, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    ws = wb.create_sheet(title=title)
+
+    # Before the first append, not after: in write-only mode the view settings
+    # are serialised as soon as a row is written, so a freeze set at the end
+    # is silently dropped and HR scrolls a month with no header in sight.
+    ws.freeze_panes = "A2"
+
+    for index, (_, width) in enumerate(columns, start=1):
+        ws.column_dimensions[get_column_letter(index)].width = width
+
+    font, border, _ = _report_body_style()
+    fill = PatternFill("solid", fgColor="FFD3D3D3")
+    align = Alignment(horizontal="center", vertical="center")
+
+    header = []
+    for text, _ in columns:
+        cell = WriteOnlyCell(ws, value=text)
+        cell.font, cell.border, cell.alignment = font, border, align
+        cell.fill = fill
+        cell.number_format = _TEXT_FORMAT
+        header.append(cell)
+    ws.append(header)
+    return ws
+
+
+def _report_body_style():
+    """One font, one border, one alignment, shared by every data cell.
+
+    Built once and reused: openpyxl folds identical style objects into a
+    single entry in the workbook's style table, so a month for 200 people
+    costs one style instead of ninety thousand.
+    """
+    from openpyxl.styles import Alignment, Border, Font, Side
+
+    thin = Side(style="thin", color="FF000000")
+    return (
+        Font(name="Tahoma", size=8),
+        Border(left=thin, right=thin, top=thin, bottom=thin),
+        Alignment(horizontal="left", vertical="center"),
+    )
+
+
+def _report_row(ws, style, values) -> list:
+    """One row of styled text cells. A None stays empty — and still gets its
+    border, so a blank rest day does not tear a hole in the grid."""
+    from openpyxl.cell import WriteOnlyCell
+
+    font, border, align = style
+    row = []
+    for value in values:
+        cell = WriteOnlyCell(ws, value=value)
+        cell.font, cell.border, cell.alignment = font, border, align
+        cell.number_format = _TEXT_FORMAT
+        row.append(cell)
+    return row
+
+
+def _build_report_workbook(db, rows, days, people) -> BytesIO:
+    """The monthly timesheet: one row per person per day, scored."""
     from openpyxl import Workbook
 
     wb = Workbook(write_only=True)
-    ws = _start_sheet(wb, "Daily Attendance", _DAILY_COLUMNS)
+    ws = _start_report_sheet(wb, "Attendance report", _REPORT_COLUMNS)
 
-    employee_names, device_zones, device_names = _lookups(db)
+    # Only the zones: the report has no timezone column — it is one site's
+    # timesheet, in the site's own hours — but _daily_groups resolves them
+    # anyway, and handing it an empty map would make it label every punch
+    # with the configured default instead of the device's own.
+    device_zones = dict(db.query(Device.serial_number, Device.timezone).all())
     groups = _daily_groups(rows, device_zones)
+    style = _report_body_style()
 
-    def sort_key(item):
-        (day, user_id), _ = item
-        return (day, (employee_names.get(user_id) or user_id).lower(), user_id)
+    for pin, name in people:
+        for day in days:
+            is_work_day = day.isoweekday() in config.WORK_DAYS
+            entry = groups.get((day, pin))
+            first = entry["first"] if entry else None
+            last = entry["last"] if entry else None
+            scored = _score_day(
+                first, last, entry["punches"] if entry else 0, is_work_day
+            )
 
-    count = 0
-    for (day, user_id), entry in sorted(groups.items(), key=sort_key):
-        single = entry["punches"] == 1
-
-        # One punch in a day is not a worked day, it is half a record: the
-        # person forgot to punch out, or the terminal missed it. Check Out and
-        # Hours are left empty rather than filled with the check-in time,
-        # which would read as a zero-hour day that somebody actually worked.
-        check_out = None if single else _formatted(ws, entry["last"].time(), _TIME_FORMAT)
-        hours = None
-        if not single:
-            span = (entry["last"] - entry["first"]).total_seconds() / 3600
-            hours = _formatted(ws, round(span, 2), _HOURS_FORMAT)
-
-        ws.append([
-            _formatted(ws, day, _DATE_FORMAT),
-            user_id,
-            employee_names.get(user_id) or user_id,
-            _formatted(ws, entry["first"].time(), _TIME_FORMAT),
-            check_out,
-            hours,
-            entry["punches"],
-            device_names.get(entry["first_sn"], entry["first_sn"]),
-            None if single else device_names.get(entry["last_sn"], entry["last_sn"]),
-            # Normally one zone. Two only when somebody punched on terminals in
-            # different zones on the same day, and then both are named rather
-            # than one being picked — the two times on that row do not share a
-            # meaning, and the sheet must say so instead of hiding it.
-            " / ".join(sorted(entry["zones"])),
-        ])
-        count += 1
-
-    _finish_sheet(ws, _DAILY_COLUMNS, count)
+            ws.append(_report_row(ws, style, [
+                pin,
+                name,
+                day.strftime(_REPORT_DATE_FORMAT),
+                config.WORK_TIMETABLE_NAME if is_work_day else None,
+                _hm(scored["actual"]),
+                _hm(scored["required"]),
+                # Overtime, three tiers. ZKTime.Net scored this install's
+                # August export as 0:00 in all three on every one of its 651
+                # rows, including days that ran past the end of the shift — so
+                # no overtime rule can be read out of it. Rather than invent
+                # one and put unapproved hours onto a payroll sheet, the
+                # columns are kept (the layout is a contract) and left at
+                # zero until there is a rule to apply.
+                _hm(0),
+                _hm(0),
+                _hm(0),
+                _hm(scored["late"]),
+                _hm(scored["early"]),
+                _hm(scored["absent"]),
+                first.strftime(_REPORT_CLOCK_FORMAT) if first else None,
+                last.strftime(_REPORT_CLOCK_FORMAT) if scored["paired"] else None,
+            ]))
 
     buffer = BytesIO()
     wb.save(buffer)
@@ -396,7 +528,6 @@ def _build_daily_workbook(db, rows) -> BytesIO:
 @router.get("/export.xlsx")
 def export_attendance(
     request: Request,
-    mode: Literal["daily", "raw"] = Query("daily"),
     device_sn: Optional[str] = Query(None),
     user_id: Optional[str] = Query(None),
     from_date: Optional[datetime] = Query(None),
@@ -404,10 +535,9 @@ def export_attendance(
     user: User = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
-    """Everything matching the current filter, as one .xlsx workbook.
-
-    ``mode=daily`` (the default) is the timesheet: one row per person per day,
-    first punch in and last punch out. ``mode=raw`` is every punch.
+    """The timesheet for everything matching the current filter, as one
+    .xlsx workbook: a row for every person on every day of the range, in
+    ZKTime.Net's own layout, scored against the configured shift.
 
     Audited: this hands a copy of the attendance history to whoever asked for
     it, which is exactly the kind of action the trail exists for.
@@ -416,10 +546,10 @@ def export_attendance(
 
     total = q.count()
     if total > config.ATTENDANCE_EXPORT_MAX_ROWS:
-        # The ceiling is on punches *read*, not rows written, in both modes: a
-        # daily sheet is small, but it is still built by walking every punch
-        # behind it. Refused up front, with the numbers, rather than
-        # half-building a workbook the server cannot hold.
+        # The ceiling is on punches *read*, not rows written: the sheet
+        # itself is small, but it is built by walking every punch behind it.
+        # Refused up front, with the numbers, rather than half-building a
+        # workbook the server cannot hold.
         raise HTTPException(
             status_code=400,
             detail=(
@@ -437,16 +567,46 @@ def export_attendance(
         .yield_per(_EXPORT_BATCH)
     )
 
-    build = _build_daily_workbook if mode == "daily" else _build_raw_workbook
-    payload = build(db, rows).getvalue()
-    filename = _export_filename(mode, device_sn, user_id, from_date, to_date)
+    days = _report_days(db, q, from_date, to_date)
+    # Who punched, straight from the database rather than from the rows:
+    # the roster is what the sheet is built from, and somebody who is not
+    # on it but is in the records must still get their rows.
+    seen = {
+        row[0]
+        for row in q.with_entities(AttendanceLog.user_id).distinct().all()
+    }
+    people = _report_people(
+        db, device_sn, user_id,
+        dict(db.query(Employee.user_id, Employee.name).all()),
+        seen,
+    )
+
+    # The second ceiling, and the one the timesheet actually runs into: it
+    # has a row per person per day whether or not anybody punched, so a
+    # year for a large roster is a big sheet built from very few records.
+    # Same answer as above — say the numbers, name the fix, build nothing.
+    grid = len(people) * len(days)
+    if grid > config.ATTENDANCE_EXPORT_MAX_ROWS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"That range is {len(days):,} days for {len(people):,} "
+                f"people, which is {grid:,} timesheet rows, and an export "
+                f"is limited to {config.ATTENDANCE_EXPORT_MAX_ROWS:,}. "
+                "Narrow the date range (one month at a time), or pick a "
+                "single employee, and export again."
+            ),
+        )
+
+    payload = _build_report_workbook(db, rows, days, people).getvalue()
+    filename = _export_filename(device_sn, user_id, from_date, to_date)
 
     audit.record(
         db, user.username, "attendance_export",
         target=filename,
         ip=client_ip(request),
         detail=(
-            f"mode={mode}; rows={total}; device={device_sn or 'all'}; "
+            f"rows={total}; device={device_sn or 'all'}; "
             f"employee={user_id or 'all'}; "
             f"from={from_date.isoformat() if from_date else 'any'}; "
             f"to={to_date.isoformat() if to_date else 'any'}"

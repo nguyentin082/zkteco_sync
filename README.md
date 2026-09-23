@@ -24,6 +24,7 @@ This app runs both listeners. Devices push attendance events the moment they hap
 - **Live enrollment** — trigger fingerprint enrollment on a device from the UI
 - **Device control** — unlock door, set clock, write LCD message, restart, queue raw commands
 - **HRM integration** — push attendance records to a third-party HRM on a configurable interval, with last-synced-ID tracking and a manual trigger
+- **ZKTime.Net backup and restore** — read a ZKTime `.db` into this app, or build one from it. Restore is the only way to recover punches older than this server, since an access-control terminal cannot be asked for its history. Both directions are additive and safe to repeat.
 - **Multi-database** — MariaDB, MySQL, PostgreSQL, or MSSQL (including Windows Authentication)
 - **DB-backed operator accounts** — Argon2id-hashed passwords, `admin`/`viewer` roles, forced password change on first login, account lockout after repeated failures. Sessions are an opaque server-side token in an `HttpOnly`, `SameSite=Strict` cookie (never a bearer token, never `localStorage`), with CSRF protection on every state-changing request. See [SECURITY.md](SECURITY.md) for the full model.
 - **Device approval queue** — an unknown device serial is refused, not auto-registered; approve it from a pending queue, or open a time-boxed pairing window while onboarding new hardware. Optional per-device source-IP allowlist.
@@ -273,6 +274,62 @@ Go to **Settings → HRM Sync** in the UI to configure:
 
 Records are batched in groups of 10,000. On failure, state is preserved so the next run resumes from where it left off.
 
+## ZKTime.Net backup and restore
+
+**Settings → Backup** and **Settings → Restore** (admin only). Reads and writes
+the `.db` file ZKTime's own Backup button produces.
+
+Why it matters: an access-control terminal's transaction table cannot be
+queried — `POST /devices/{sn}/pull/attendance` answers 501 — so punches older
+than this server exist only in a ZKTime backup.
+
+### Restore
+
+Upload a `.db`, check the summary, pick which terminal in the file and which
+device here to file its punches under, then Restore. Times are stored exactly
+as the file records them and labelled with that device's timezone; nothing is
+shifted. It only ever adds, and a second run inserts nothing.
+
+| Part | Default | |
+|---|---|---|
+| Employees | on | Fills blanks; never overwrites a field an operator filled |
+| Attendance | on | Deduplicated on `(device, PIN, timestamp)` |
+| Fingerprint templates | off | Stored as a copy, never pushed to a terminal |
+
+Restore Employees alongside Attendance: the Attendance screen hides punches
+whose PIN it cannot put a name to.
+
+`att_day_summary` and `att_day_details` are not imported. They are ZKTime's
+shift engine's conclusions; this app scores its own from the punches.
+
+### Backup
+
+One button, then a save dialogue. Produces `bak_zktime_YYYYDDMM.db`.
+
+It is built on a **template** — a real ZKTime backup the server keeps — because
+78 of the 82 tables are ZKTime's own installation (menus, logins, shifts, an
+opaque `Sys_Config` BLOB) and cannot be generated. **A restore saves its own
+file as that template**, so the normal path is: restore once, and Backup works
+from then on. The template lives at `BACKUP_DATA_DIR/zktime_template.db`
+(default `<app>/data`; Docker mounts a volume for it). Losing it only means
+Backup asks for one again.
+
+What it writes: `att_terminal` and `hr_employee` **merged**, so departments,
+positions and device passwords survive; `att_punches` and `hr_biotemplate`
+replaced in full; `att_day_*` emptied; everything else untouched.
+
+**Watch this:** `att_punches` is replaced wholesale, so exporting from an app
+holding less history than the template produces a *smaller* backup. Do not
+overwrite the original with it — the export warns you, naming both counts.
+
+SDK-pulled templates (`fingerprint_templates`) are not exported; only
+`biometric_templates` is. Restoring a backup *with* Fingerprint templates
+ticked is what fills that table.
+
+Verified end to end against a real 19 MB backup: restore it, back it up again,
+and punches, people and templates compare row for row identical, with all 82
+tables and the `Sys_Config` BLOB byte-identical.
+
 ## Development
 
 Run backend and frontend separately with hot reload:
@@ -339,11 +396,14 @@ app/
     adms.py         # ADMS push endpoints (device-initiated, unauthenticated)
     hrm_sync.py     # HRM config, status, manual trigger
     audit.py        # Admin-only audit trail read
+    backup.py       # Upload, preview, restore and export a ZKTime.Net .db
   services/
     bootstrap.py    # First-boot admin seeding from API_USERNAME/API_PASSWORD
     pairing.py      # Device pairing-window state
     poller.py       # SDK pull logic (employees, attendance, templates)
     hrm_sync.py     # HRM push logic and batch loop
+    zktime_backup.py # Reads a ZKTime .NET SQLite backup into this app's tables
+    zktime_export.py # Writes one back out, merged into a template backup
 frontend/
   src/
     pages/          # Devices, Employees, Attendance, Users, Settings, Login, ChangePassword

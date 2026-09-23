@@ -83,6 +83,46 @@ async function download(path) {
   return { blob: await res.blob(), filename: match ? match[1] : null }
 }
 
+// Lets the person pick where the file goes, falling back to an ordinary
+// download. showSaveFilePicker is a real save dialogue — folder, filename,
+// overwrite prompt — which is what a backup wants: it is a file somebody
+// keeps, not a transient export, and Downloads is rarely where it belongs.
+// Chromium has it; Firefox and Safari do not, and there they get saveBlob and
+// their own download settings, which is the same behaviour as before.
+//
+// Returns true if the file was written, false if the person cancelled the
+// dialogue — a cancel is a decision, not an error, and must not raise.
+export async function saveBlobAs(blob, filename) {
+  if (typeof window.showSaveFilePicker !== 'function') {
+    saveBlob(blob, filename)
+    return true
+  }
+  let handle
+  try {
+    handle = await window.showSaveFilePicker({
+      suggestedName: filename,
+      types: [{
+        description: 'ZKTime backup',
+        accept: { 'application/vnd.sqlite3': ['.db'] },
+      }],
+    })
+  } catch (err) {
+    // AbortError is the person closing the dialogue. Anything else means the
+    // picker is unavailable in this context (a sandboxed iframe, say), and
+    // the ordinary download still works.
+    if (err?.name === 'AbortError') return false
+    saveBlob(blob, filename)
+    return true
+  }
+  const writable = await handle.createWritable()
+  try {
+    await writable.write(blob)
+  } finally {
+    await writable.close()
+  }
+  return true
+}
+
 // Hands the blob to the browser as a save. Revoking the object URL matters:
 // without it the file stays in memory for the life of the tab, and an export
 // is megabytes.
@@ -98,11 +138,68 @@ export function saveBlob(blob, filename) {
   URL.revokeObjectURL(url)
 }
 
+// Sends a file as the raw request body rather than a multipart form. A ZKTime
+// backup is one file with no accompanying fields, and multipart would wrap
+// tens of megabytes in a parser for nothing. Uses the same cookie, CSRF token
+// and SPA-vs-API flag as request(); only Content-Type differs, and the body is
+// the File object itself so the browser streams it instead of reading it into
+// memory first.
+async function upload(path, file) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'X-Requested-With': 'XMLHttpRequest',
+      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+    },
+    body: file,
+  })
+
+  if (res.status === 401) {
+    csrfToken = null
+    window.location.href = '/'
+    throw new Error('Unauthorized')
+  }
+
+  // 413 is answered by the middleware as plain text, before any route runs,
+  // so it has no JSON body to read a detail out of.
+  if (res.status === 413) {
+    throw new Error('That file is larger than this server accepts for an upload.')
+  }
+
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.detail || 'Upload failed')
+  return data
+}
+
 export const api = {
   hrmSync: {
     status: () => request('GET', '/hrm-sync'),
     update: (data) => request('PUT', '/hrm-sync', data),
     run: () => request('POST', '/hrm-sync/run'),
+  },
+  // Restoring history out of a ZKTime .NET backup (F1). Two steps on purpose:
+  // the file is uploaded once and previewed, and only a second, explicit call
+  // writes anything.
+  backup: {
+    // Restore: upload a ZKTime .db, look at what is in it, then commit.
+    upload: (file) => upload('/backup/upload', file),
+    restore: (data) => request('POST', '/backup/restore', data),
+    discard: (token) => request('DELETE', `/backup/upload/${token}`),
+
+    // Backup: no upload. The server holds a ZKTime backup as a template
+    // (a restore saves its own file as one), because most of a ZKTime
+    // database is its own configuration and cannot be generated.
+    template: () => request('GET', '/backup/template'),
+    setTemplate: (file) => upload('/backup/template', file),
+    clearTemplate: () => request('DELETE', '/backup/template'),
+    // Two calls on purpose: the first builds the file and reports what went
+    // into it, the second fetches it. The warning that matters most — this
+    // file holds fewer punches than the template — is worthless once the
+    // file has already been written to disk.
+    buildExport: (data) => request('POST', '/backup/export', data),
+    downloadExport: (token) => download(`/backup/export/${token}`),
   },
   attendance: {
     list: (params = {}) => {

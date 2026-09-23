@@ -24,7 +24,7 @@ from app.middleware import (
     SpaNavigationMiddleware,
 )
 from app.migrations import run_migrations
-from app.routers import adms, attendance, audit, auth, devices, employees, users
+from app.routers import adms, attendance, audit, auth, backup, devices, employees, users
 from app.routers import hrm_sync
 from app.database import SessionLocal
 from app.models import HrmIntegration
@@ -162,7 +162,19 @@ _index_html = os.path.join(_dist, "index.html")
 # the same CSP and friends as every other document response.
 app.add_middleware(SpaNavigationMiddleware, index_html=_index_html)
 app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(MaxBodySizeMiddleware, max_bytes=config.MAX_REQUEST_BYTES)
+# Two routes take a whole ZKTime SQLite database as a body — 19 MB for the
+# operator's own, against a 2 MB global limit that is correct for every other
+# browser-facing route. Listed one by one rather than exempting "/backup",
+# which would also hand the ceiling to /backup/restore and /backup/export,
+# whose bodies are small JSON and have no business being large.
+app.add_middleware(
+    MaxBodySizeMiddleware,
+    max_bytes=config.MAX_REQUEST_BYTES,
+    overrides={
+        "/backup/upload": config.BACKUP_MAX_UPLOAD_BYTES,
+        "/backup/template": config.BACKUP_MAX_UPLOAD_BYTES,
+    },
+)
 app.add_middleware(
     TrustedHostMiddleware,
     # ALLOWED_HOSTS is required in production (app/config.py refuses to
@@ -193,6 +205,7 @@ app.include_router(attendance.router)
 app.include_router(hrm_sync.router)
 app.include_router(users.router)
 app.include_router(audit.router)
+app.include_router(backup.router)
 
 # Serve the React build — must come last so API routes take priority.
 #

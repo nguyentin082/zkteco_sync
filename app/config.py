@@ -7,6 +7,7 @@ half-way through a request. Later hardening units add keys to this module.
 
 import logging
 import os
+import tempfile
 import zoneinfo
 from datetime import time as dt_time
 from functools import lru_cache
@@ -93,6 +94,60 @@ ADMS_PAIRING_MINUTES = _get_int("ADMS_PAIRING_MINUTES", 15)
 # silently. 200k rows is roughly a year of a few hundred people punching four
 # times a day, and produces a file of a few megabytes.
 ATTENDANCE_EXPORT_MAX_ROWS = max(1, _get_int("ATTENDANCE_EXPORT_MAX_ROWS", 200_000))
+
+
+# ---------------------------------------------------------------------------
+# ZKTime backup restore (F1)
+# ---------------------------------------------------------------------------
+#
+# A ZKTime .NET backup is a whole SQLite database, and the operator's own is
+# 19 MB — an order of magnitude past MAX_REQUEST_BYTES, which is sized for
+# JSON and is the right limit for every other browser-facing route. So this
+# one prefix gets its own ceiling rather than the global one being raised to
+# suit it; see MaxBodySizeMiddleware's `overrides`.
+#
+# 128 MB is generous on purpose: the file grows with punch history, an
+# installation with more terminals and more years will be several times the
+# size of this one, and an operator who hits the limit mid-restore learns
+# about it only after the upload has already run.
+BACKUP_MAX_UPLOAD_BYTES = max(
+    1, _get_int("BACKUP_MAX_UPLOAD_BYTES", 128 * 1024 * 1024)
+)
+
+# Where an uploaded backup waits between "preview" and "restore". It is
+# deliberately a scratch directory and not the app tree: the file holds
+# fingerprint templates and staff records, it is written by an HTTP handler,
+# and nothing should ever serve it back out.
+BACKUP_STAGE_DIR = _get("BACKUP_STAGE_DIR") or os.path.join(
+    tempfile.gettempdir(), "zkteco_sync_backups"
+)
+
+# How long a staged upload survives. Long enough for an operator to read a
+# preview and decide; short enough that a 19 MB file full of biometric data
+# does not sit on disk overnight because somebody closed the tab. Expired
+# files are deleted on the next upload and refused on use, so neither clock
+# nor scheduler is load-bearing.
+BACKUP_STAGE_TTL_SECONDS = max(60, _get_int("BACKUP_STAGE_TTL_SECONDS", 1800))
+
+# Where the backup *template* is kept — the ZKTime .db an export is built on.
+# Unlike a staged upload this is meant to persist: it is what makes Backup a
+# single button rather than an upload every time. It is replaced by the most
+# recent successful restore, and can be set explicitly in the Backup panel.
+#
+# Deliberately NOT under BACKUP_STAGE_DIR: that directory is swept on every
+# upload and the template would be deleted by the TTL within the hour.
+#
+# The default sits beside the code, which is writable on a native install and
+# is where an operator looks for a file the app owns. In a container /app is
+# root-owned and the app user cannot write there, so Docker deployments set
+# BACKUP_DATA_DIR to a mounted volume (see docker-compose.yml). Losing this
+# file is recoverable, not fatal: Backup then asks for a template again.
+BACKUP_DATA_DIR = _get("BACKUP_DATA_DIR") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"
+)
+BACKUP_TEMPLATE_PATH = _get("BACKUP_TEMPLATE_PATH") or os.path.join(
+    BACKUP_DATA_DIR, "zktime_template.db"
+)
 
 
 # ---------------------------------------------------------------------------

@@ -31,6 +31,10 @@ services:
       # *host* exposes is narrowed by the ports: mapping below.
       APP_HOST: 0.0.0.0
       APP_PORT: "8000"
+      # Where the ZKTime backup template lives. Must point at the volume
+      # below: /app is root-owned and the app user cannot write to it, so the
+      # native default (<app>/data) would fail in a container.
+      BACKUP_DATA_DIR: /var/lib/zkteco-sync
     ports:
       # Published on loopback only by default, mirroring the native install:
       # Apache on the host terminates TLS and proxies to 127.0.0.1:8000. For a
@@ -41,6 +45,13 @@ services:
       # subnet below that address is always 172.30.0.1 — put that in
       # TRUSTED_PROXIES (see DEPLOY.md).
       - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8000}:8000"
+    volumes:
+      # The ZKTime backup an export is built on. /app is root-owned and the
+      # app user cannot write there, so this is the one piece of state the
+      # container keeps on disk. Losing it is recoverable — Backup asks for a
+      # template again, and the next restore saves one — but a named volume
+      # means a restart does not cost the operator that upload.
+      - backupdata:/var/lib/zkteco-sync
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -82,3 +93,4 @@ networks:
 
 volumes:
   dbdata:
+  backupdata:

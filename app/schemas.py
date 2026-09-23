@@ -153,6 +153,19 @@ class AttendanceOut(BaseModel):
     # whose device is gone; the UI shows the label it is given and never
     # invents one.
     timezone: Optional[str] = None
+    # What this punch means once the day around it is known: "check_in",
+    # "check_out", "interim", "in_only" or "out_only" — see
+    # app/services/attendance_pairing.py. Derived, never stored, and set by
+    # the list endpoint rather than read off the record, because it depends on
+    # the person's other punches that day and not on the row alone.
+    #
+    # `status` above is kept beside it untouched. On this installation that
+    # field is the device's unpressed mode key and says "check-out" for
+    # essentially every record, which is why this one exists; on another
+    # installation it may be real, and deleting it to hide our own problem
+    # would throw away the only thing the operator could check us against.
+    # Null when the row cannot be placed in a day at all.
+    derived_status: Optional[str] = None
 
     class Config:
         from_attributes = True

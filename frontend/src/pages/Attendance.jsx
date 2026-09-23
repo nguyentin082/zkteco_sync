@@ -3,19 +3,58 @@ import { api, saveBlob } from '../api'
 
 const PAGE_SIZE = 50
 
-const STATUS_LABELS = {
-  0: { label: 'Check In', style: 'bg-green-100 text-green-700' },
-  1: { label: 'Check Out', style: 'bg-blue-100 text-blue-700' },
-  2: { label: 'Break Out', style: 'bg-yellow-100 text-yellow-700' },
-  3: { label: 'Break In', style: 'bg-yellow-100 text-yellow-700' },
-  4: { label: 'OT In', style: 'bg-orange-100 text-orange-700' },
-  5: { label: 'OT Out', style: 'bg-orange-100 text-orange-700' },
+// What the badge says, keyed off the server's `derived_status`: the meaning
+// of a punch read from the day around it. See app/services/attendance_pairing.py
+// for the rule. The half-record pair is amber rather than red because it is a
+// gap in the data and not an error — the person was here, the terminal only
+// caught them once.
+const DERIVED_LABELS = {
+  check_in: { label: 'Check In', style: 'bg-green-100 text-green-700' },
+  check_out: { label: 'Check Out', style: 'bg-blue-100 text-blue-700' },
+  interim: { label: 'Interim', style: 'bg-gray-100 text-gray-500' },
+  in_only: { label: 'Check In · no Out', style: 'bg-amber-100 text-amber-700' },
+  out_only: { label: 'Check Out · no In', style: 'bg-amber-100 text-amber-700' },
 }
 
-function StatusBadge({ status }) {
-  const s = STATUS_LABELS[status] || { label: `Status ${status}`, style: 'bg-gray-100 text-gray-500' }
+// The hint under the cursor, explaining where each label came from.
+const DERIVED_HINTS = {
+  check_in: 'Earliest punch of this day',
+  check_out: 'Latest punch of this day',
+  interim: 'Neither the first nor the last punch of this day',
+  in_only: 'The only punch of this day, in the first half of the shift — no check-out was recorded',
+  out_only: 'The only punch of this day, in the second half of the shift — no check-in was recorded',
+}
+
+// The device's own in/out codes. Kept only for the tooltip: on this
+// installation nobody presses the mode key on the terminal, so this field
+// reads 1 — "check-out" — for essentially every record, which is why the
+// badge is derived from the clock instead. It is still shown, because an
+// operator has to be able to see what the terminal actually sent.
+const DEVICE_STATUS_LABELS = {
+  0: 'Check In',
+  1: 'Check Out',
+  2: 'Break Out',
+  3: 'Break In',
+  4: 'OT In',
+  5: 'OT Out',
+}
+
+function StatusBadge({ derived, status }) {
+  const s =
+    DERIVED_LABELS[derived] ||
+    // No derived label: a row with no timestamp, or an older server. Fall
+    // back to the raw code rather than showing nothing.
+    { label: DEVICE_STATUS_LABELS[status] || `Status ${status}`, style: 'bg-gray-100 text-gray-500' }
+
+  const device = DEVICE_STATUS_LABELS[status] || String(status)
+  const hint = DERIVED_HINTS[derived]
+  const title = hint ? `${hint}. Device reported: ${device}` : `Device reported: ${device}`
+
   return (
-    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${s.style}`}>
+    <span
+      title={title}
+      className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${s.style}`}
+    >
       {s.label}
     </span>
   )
@@ -234,7 +273,12 @@ export default function Attendance() {
                   Timestamp
                   <span className="ml-1.5 font-normal text-gray-400 text-xs">device local time</span>
                 </th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">
+                  Status
+                  <span className="ml-1.5 font-normal text-gray-400 text-xs">
+                    from the day&rsquo;s punches
+                  </span>
+                </th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Device</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Source</th>
               </tr>
@@ -255,7 +299,9 @@ export default function Attendance() {
                       {row.timezone || 'unlabelled'}
                     </span>
                   </td>
-                  <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
+                  <td className="px-4 py-3">
+                    <StatusBadge derived={row.derived_status} status={row.status} />
+                  </td>
                   <td className="px-4 py-3 text-gray-400 font-mono text-xs">{row.device_sn}</td>
                   <td className="px-4 py-3 text-gray-400 text-xs">{row.source}</td>
                 </tr>

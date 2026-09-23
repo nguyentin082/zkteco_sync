@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from io import BytesIO
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.deps import require_auth
@@ -12,6 +13,9 @@ from app.database import get_db
 from app.models import AttendanceLog, Device, DeviceEmployee, Employee, User
 from app.net import client_ip
 from app.schemas import AttendanceOut
+from app.services.attendance_pairing import (
+    day_edges, is_paired, label, minute_of_day, wall_clock,
+)
 
 router = APIRouter(prefix="/attendance", tags=["attendance"], dependencies=[Depends(require_auth)])
 
@@ -27,6 +31,57 @@ def _build_query(db, device_sn, user_id, from_date, to_date):
     if to_date:
         q = q.filter(AttendanceLog.timestamp <= to_date)
     return q
+
+
+def _derived_statuses(db, rows):
+    """`derived_status` for one page of the attendance table, keyed by row id.
+
+    The page is fifty rows of a filtered, descending query, and that is not
+    enough to say which punch was a day's first: the 08:12 arrival may sit on
+    the next page, or outside the filter's own time-of-day cut. So the labels
+    are built from a second query that fetches *every* punch belonging to the
+    (person, day) pairs on this page.
+
+    That query deliberately drops two of the caller's filters. `device_sn`,
+    because somebody who badges in at the main door and out at the warehouse
+    has still only arrived once, and scoring each device separately would give
+    them two arrivals and two departures. The `from_date`/`to_date` clock, for
+    the same reason in time: a filter starting at 10:00 must not promote a
+    10:05 punch to "check-in". One consequence is worth saying out loud — the
+    badge describes the whole working day, not the slice of it the filter
+    selected.
+
+    Bounded by construction: one (person, day) term per row on the page at
+    most, each a range on the indexed `timestamp` column, so a page costs one
+    extra query over at most fifty days of at most fifty people.
+    """
+    whens = {row.id: wall_clock(row) for row in rows}
+    pairs = {
+        (row.user_id, whens[row.id].date())
+        for row in rows
+        if whens[row.id] is not None
+    }
+    if not pairs:
+        return {}
+
+    terms = [
+        and_(
+            AttendanceLog.user_id == user_id,
+            AttendanceLog.timestamp >= datetime.combine(day, time.min),
+            AttendanceLog.timestamp < datetime.combine(day, time.min) + timedelta(days=1),
+        )
+        for user_id, day in pairs
+    ]
+    # Three columns, not whole ORM objects: this reads a day's worth of
+    # punches around every row on the page and only needs to rank them.
+    context = (
+        db.query(AttendanceLog.id, AttendanceLog.user_id, AttendanceLog.timestamp)
+        .filter(or_(*terms))
+        .all()
+    )
+
+    edges = day_edges(context)
+    return {row.id: label(row, edges) for row in rows}
 
 
 @router.get("")
@@ -51,11 +106,18 @@ def list_attendance(
     # one by re-zoning it into the viewer's locale.
     device_zones = dict(db.query(Device.serial_number, Device.timezone).all())
 
+    # What each punch means, read off the day it belongs to rather than off
+    # the device's `status` column — which nobody on this installation ever
+    # sets, so it reports a check-out for essentially every record. The raw
+    # value still goes out beside this one.
+    derived = _derived_statuses(db, rows)
+
     items = []
     for r in rows:
         item = AttendanceOut.model_validate(r)
         if not item.timezone:
             item.timezone = device_zones.get(r.device_sn) or config.DEFAULT_DEVICE_TIMEZONE
+        item.derived_status = derived.get(r.id)
         items.append(item)
 
     return {"total": total, "items": items}
@@ -167,18 +229,6 @@ def _zone_of(row, device_zones):
     return row.timezone or device_zones.get(row.device_sn) or config.DEFAULT_DEVICE_TIMEZONE
 
 
-def _wall_clock(row):
-    """The punch as the device's clock showed it, with no offset attached.
-
-    The column type hands back a UTC-aware datetime, but these digits are the
-    device's own wall-clock and the `Timezone` column is what says so. tzinfo
-    is dropped rather than converted: Excel has no concept of an offset and
-    openpyxl refuses an aware datetime outright, and converting would move a
-    14:48 punch to some other hour — the exact bug D10 exists to prevent.
-    """
-    return row.timestamp.replace(tzinfo=None) if row.timestamp else None
-
-
 def _daily_groups(rows, device_zones):
     """Collapse punches into one entry per (day, person).
 
@@ -196,7 +246,7 @@ def _daily_groups(rows, device_zones):
     """
     groups = {}
     for row in rows:
-        when = _wall_clock(row)
+        when = wall_clock(row)
         if when is None:
             continue
 
@@ -232,11 +282,6 @@ def _daily_groups(rows, device_zones):
 # formula against every row in it whose value was not zero.
 
 
-def _clock(value) -> int:
-    """A time of day as minutes since midnight."""
-    return value.hour * 60 + value.minute
-
-
 def _overlap(start: int, end: int, window_start: int, window_end: int) -> int:
     """Minutes the span [start, end] spends inside [window_start, window_end]."""
     return max(0, min(end, window_end) - max(start, window_start))
@@ -251,8 +296,8 @@ def _paid(start: int, end: int) -> int:
     """
     if end <= start:
         return 0
-    break_start = _clock(config.WORK_BREAK_START)
-    break_end = _clock(config.WORK_BREAK_END)
+    break_start = minute_of_day(config.WORK_BREAK_START)
+    break_end = minute_of_day(config.WORK_BREAK_END)
     return end - start - _overlap(start, end, break_start, break_end)
 
 
@@ -279,21 +324,22 @@ def _score_day(first, last, punches: int, is_work_day: bool) -> dict:
     sheet, and charging lateness for a day already counted absent would take
     the same hour off twice.
     """
-    shift_start = _clock(config.WORK_SHIFT_START)
-    shift_end = _clock(config.WORK_SHIFT_END)
-    break_start = _clock(config.WORK_BREAK_START)
-    break_end = _clock(config.WORK_BREAK_END)
+    shift_start = minute_of_day(config.WORK_SHIFT_START)
+    shift_end = minute_of_day(config.WORK_SHIFT_END)
+    break_start = minute_of_day(config.WORK_BREAK_START)
+    break_end = minute_of_day(config.WORK_BREAK_END)
 
     required = _paid(shift_start, shift_end) if is_work_day else 0
 
-    came = _clock(first) if first is not None else None
-    went = _clock(last) if last is not None else None
+    came = minute_of_day(first) if first is not None else None
+    went = minute_of_day(last) if last is not None else None
 
     # Two punches in the same minute are the same broken record as one:
     # somebody touched the terminal twice on their way in. There is no span
     # there to pay, so the day is scored as the absence it is rather than as
-    # a worked day of no hours.
-    paired = punches >= 2 and came is not None and went is not None and went > came
+    # a worked day of no hours. Shared with the Attendance screen's badges, so
+    # a row the table calls half a record is never a paid day on the sheet.
+    paired = is_paired(first, last, punches)
 
     if not paired:
         return {

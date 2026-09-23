@@ -306,26 +306,36 @@ export default function Attendance() {
           )}
         </div>
 
-        {/* Deliberately not sent to the export. The workbook keeps a leaver's
-            punches whichever way this is set, because somebody who resigned
-            on the 12th still worked until the 12th and HR reconciles that
-            month's sheet against payroll. This only governs the table. */}
+        {/* Governs the table only — deliberately not sent to the export. The
+            workbook keeps a leaver's punches whichever way this is set,
+            because somebody who resigned on the 12th still worked until the
+            12th and HR reconciles that month against payroll. The long
+            version of that lives in the title, not on screen. */}
         <div className="col-span-2 md:col-span-4 border-t border-gray-100 pt-3">
-          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={filters.include_hidden}
-              onChange={(e) => setFilter('include_hidden', e.target.checked)}
-              className="rounded border-gray-300"
-            />
-            Show failed scans and deleted employees
-          </label>
-          <p className="mt-1 ml-6 text-xs text-gray-400">
-            Hidden by default: records the terminal wrote under PIN&nbsp;0 — a device
-            event, or a face or finger that matched nobody — and punches by people
-            since removed from the roster. Nothing is deleted, and the Excel
-            timesheet always includes the latter.
-          </p>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={filters.include_hidden}
+            onClick={() => setFilter('include_hidden', !filters.include_hidden)}
+            title={
+              'Failed scans (PIN 0) and punches by deleted employees. ' +
+              'Nothing is deleted, and the Excel timesheet always keeps the latter.'
+            }
+            className="group flex items-center gap-2.5 text-sm text-gray-600"
+          >
+            <span
+              className={`relative inline-block h-5 w-9 shrink-0 rounded-full transition-colors group-focus-visible:ring-2 group-focus-visible:ring-blue-500 group-focus-visible:ring-offset-2 ${
+                filters.include_hidden ? 'bg-blue-600' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                  filters.include_hidden ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </span>
+            Show hidden records
+          </button>
         </div>
       </div>
 

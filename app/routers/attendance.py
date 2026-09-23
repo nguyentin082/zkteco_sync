@@ -3,7 +3,7 @@ from io import BytesIO
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.deps import require_auth
@@ -16,11 +16,34 @@ from app.schemas import AttendanceOut
 from app.services.attendance_pairing import (
     day_edges, is_paired, label, minute_of_day, wall_clock,
 )
+from app.services.punch_filter import NON_PERSON_PINS
 
 router = APIRouter(prefix="/attendance", tags=["attendance"], dependencies=[Depends(require_auth)])
 
 
-def _build_query(db, device_sn, user_id, from_date, to_date):
+# `punch_filter.NON_PERSON_PINS` as a sequence, since `in_()` takes one.
+# Sorted only so the generated SQL is stable and diffable.
+_NON_PERSON_PINS = tuple(sorted(NON_PERSON_PINS))
+
+
+def _build_query(db, device_sn, user_id, from_date, to_date,
+                 *, drop_non_person=True, roster_only=False):
+    """The filtered punch query the table and the timesheet are both built on.
+
+    Two exclusions live here rather than in either caller, so the screen and
+    the export can never disagree about what a record *is*:
+
+    ``drop_non_person`` — PIN 0, which is a device event or a verification
+    that matched nobody, never attendance. On by default for every caller,
+    because such a row is not a person's punch on any reading of it.
+
+    ``roster_only`` — punches whose PIN is no longer on the roster, i.e.
+    somebody deleted since they badged. Off by default, and deliberately
+    asymmetric between the two callers: the screen turns it on, because a bare
+    number nobody can put a name to is noise; the timesheet leaves it off,
+    because those punches are real hours and a leaver who resigned on the 12th
+    must still appear on that month's sheet. See app/services/punch_filter.py.
+    """
     # An inverted range is a mistake, not a filter: `timestamp >= 10 May AND
     # <= 1 May` matches nothing, so the table would answer "No records found"
     # and the timesheet would come out as an empty grid — both indisputable
@@ -33,6 +56,10 @@ def _build_query(db, device_sn, user_id, from_date, to_date):
         )
 
     q = db.query(AttendanceLog)
+    if drop_non_person:
+        q = q.filter(AttendanceLog.user_id.notin_(_NON_PERSON_PINS))
+    if roster_only:
+        q = q.filter(AttendanceLog.user_id.in_(select(Employee.user_id)))
     if device_sn:
         q = q.filter(AttendanceLog.device_sn == device_sn)
     if user_id:
@@ -103,9 +130,28 @@ def list_attendance(
     to_date: Optional[datetime] = Query(None),
     limit: int = Query(50, le=1000),
     offset: int = Query(0),
+    include_hidden: bool = Query(
+        False,
+        description=(
+            "Include rows the table hides by default: PIN-0 records (a device "
+            "event or a verification that matched nobody) and punches by "
+            "employees since deleted. Nothing is ever deleted — this is the "
+            "way back to them."
+        ),
+    ),
     db: Session = Depends(get_db),
 ):
-    q = _build_query(db, device_sn, user_id, from_date, to_date)
+    # Hidden by default, both kinds, and restorable by one flag. The screen is
+    # the strictest reader of this table on purpose: it is where an operator
+    # looks to see who came in today, and on the live database 52,131 of
+    # 96,345 rows answer that question with a number nobody can identify. The
+    # Excel timesheet is deliberately *not* filtered the same way — see
+    # `_build_query`.
+    q = _build_query(
+        db, device_sn, user_id, from_date, to_date,
+        drop_non_person=not include_hidden,
+        roster_only=not include_hidden,
+    )
     total = q.count()
     rows = q.order_by(AttendanceLog.timestamp.desc()).offset(offset).limit(limit).all()
 

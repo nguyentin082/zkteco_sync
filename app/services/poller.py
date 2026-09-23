@@ -10,6 +10,7 @@ from app import config
 from app.database import SessionLocal
 from app.models import AttendanceLog, Device, FingerprintTemplate
 from app.services import employee_sync
+from app.services.punch_filter import is_person_pin
 
 log = logging.getLogger(__name__)
 
@@ -255,7 +256,19 @@ def pull_attendance(serial_number: str) -> dict:
             # roll back the entire pull.
             seen = set()
             new_rows = []
+            skipped = 0
             for att in records:
+                # A record that belongs to nobody is not attendance. The
+                # terminal writes PIN 0 for a device event or — overwhelmingly,
+                # on this installation — a verification that matched no
+                # enrolled face or finger, seconds before the same person's
+                # successful punch. The ADMS push path has always dropped
+                # these; this path had not, and it is the only path in use
+                # here, which is how 13,185 of them reached the table. See
+                # app/services/punch_filter.py.
+                if not is_person_pin(att.user_id):
+                    skipped += 1
+                    continue
                 key = (str(att.user_id), att.timestamp)
                 if key in existing or key in seen:
                     continue
@@ -275,6 +288,12 @@ def pull_attendance(serial_number: str) -> dict:
 
             db.bulk_save_objects(new_rows)
             result["attendance_synced"] = len(new_rows)
+            if skipped:
+                log.info(
+                    "pull_attendance: %s — %d record(s) with PIN 0 ignored "
+                    "(device event or failed verification, not attendance)",
+                    serial_number, skipped,
+                )
 
             db.commit()
             device.last_seen = datetime.now(timezone.utc)

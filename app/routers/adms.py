@@ -42,6 +42,7 @@ from app.models import (
 )
 from app.net import client_ip, ip_in_cidrs
 from app.services import commands, employee_sync, pairing, provisioning
+from app.services.punch_filter import is_person_pin
 
 router = APIRouter(tags=["adms"])
 
@@ -658,7 +659,13 @@ def _store_attlog(db: Session, sn: str, body: str, tz: str) -> None:
 
     The parse is unchanged from the original — ``parts[1]`` is stored exactly
     as the device typed it, never converted. ``tz`` is the label for those
-    digits, snapshotted onto each row (D10)."""
+    digits, snapshotted onto each row (D10).
+
+    PIN 0 is skipped for the same reason ``_store_rtlog`` skips it: it is a
+    device event or a verification that matched nobody, not a punch. The two
+    parsers had disagreed about that, so the same terminal's records were
+    filtered or not depending purely on which protocol carried them."""
+    skipped = 0
     for line in body.strip().splitlines():
         line = line.strip()
         if not line or "\t" not in line or line.startswith("TableName"):
@@ -676,6 +683,10 @@ def _store_attlog(db: Session, sn: str, body: str, tz: str) -> None:
         except (ValueError, IndexError):
             continue
 
+        if not _is_person(user_id):
+            skipped += 1
+            continue
+
         exists = db.query(AttendanceLog).filter_by(
             device_sn=sn, user_id=user_id, timestamp=timestamp
         ).first()
@@ -691,6 +702,13 @@ def _store_attlog(db: Session, sn: str, body: str, tz: str) -> None:
                 # they mean at the moment of the punch.
                 timezone=tz,
             ))
+
+    if skipped:
+        log.info(
+            "ADMS ATTLOG from %s: %d record(s) with PIN 0 ignored "
+            "(device event or failed verification, not attendance)",
+            sn, skipped,
+        )
 
     db.commit()
 
@@ -743,13 +761,13 @@ def _is_person(pin: str) -> bool:
     drop real punches silently and permanently. Keying on ``pin`` instead
     means an abnormal event may briefly be counted as a punch — visible in the
     data, and correctable once real codes have been observed.
+
+    The rule itself now lives in app/services/punch_filter.py, because the SDK
+    pull path needs the identical test and had been missing it — see that
+    module for what PIN 0 turned out to be on the live installation. This name
+    stays as the parser's local vocabulary.
     """
-    if not pin:
-        return False
-    try:
-        return int(pin) != 0
-    except ValueError:
-        return True       # a non-numeric PIN is still a person
+    return is_person_pin(pin)
 
 
 # Real-time ``event`` bands, from push.txt Appendix 2 "Description of Real-time

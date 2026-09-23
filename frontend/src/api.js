@@ -111,6 +111,10 @@ export const api = {
       if (params.user_id) q.set('user_id', params.user_id)
       if (params.from_date) q.set('from_date', params.from_date)
       if (params.to_date) q.set('to_date', params.to_date)
+      // Only ever sent as `true`. Its absence is the default the server
+      // already applies, and the export below never sends it at all — the
+      // timesheet keeps a deleted employee's punches either way.
+      if (params.include_hidden) q.set('include_hidden', 'true')
       if (params.limit != null) q.set('limit', params.limit)
       if (params.offset != null) q.set('offset', params.offset)
       return request('GET', `/attendance?${q}`)

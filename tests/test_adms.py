@@ -2658,6 +2658,11 @@ class AttendanceListFallbackTests(unittest.TestCase):
         try:
             db.add(Device(serial_number=ACC_SN, ip_address="203.0.113.10", port=4370,
                           status="approved", timezone="Europe/London"))
+            # On the roster, all three: this case is about the timezone label
+            # and nothing else, and the list endpoint hides punches whose PIN
+            # has no employee behind it (see app/services/punch_filter.py).
+            for pin in ("1001", "1002", "1003"):
+                db.add(Employee(user_id=pin, name=f"Person {pin}"))
             # Stamped at ingest.
             db.add(AttendanceLog(device_sn=ACC_SN, user_id="1001",
                                  timestamp=datetime(2026, 8, 20, 14, 48, 22),

@@ -16,6 +16,7 @@ This app runs both listeners. Devices push attendance events the moment they hap
 ## Features
 
 - **Real-time attendance** via ADMS push from devices
+- **Records that name nobody are kept out of the way** — a terminal writes a record under PIN 0 for a device event or a scan that matched no enrolled face or finger, and neither is attendance: both ingest paths now refuse them. Punches by an employee since deleted are a different thing — real hours, kept — so they are hidden from the Attendance table (one checkbox brings them back) but always present in the Excel timesheet, where somebody who resigned mid-month must still appear. Nothing is deleted.
 - **On-demand sync** — pull employees, attendance, and fingerprint templates from any device
 - **Employee management** — view all employees, push to specific devices, remove from devices
 - **Excel export** — the monthly timesheet, as a formatted `.xlsx`, reproducing the report ZKTime.Net produced column for column: a row for every person on every day of the range, with hours worked, hours owed, overtime, lateness, early departures and absences scored against the shift set in `.env` (`WORK_SHIFT_START` and friends). One button, one kind of file. It covers the whole filter (device, employee, date range), not the page on screen, and days are paired by clock rather than by the device's status field — terminals where nobody presses the mode key stamp every punch identically.

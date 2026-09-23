@@ -83,6 +83,10 @@ export default function Attendance() {
     user_id: '',
     from_date: '',
     to_date: '',
+    // Off by default: the table shows punches that belong to somebody on the
+    // roster, and nothing else. See the checkbox below for what the other
+    // half of the table is.
+    include_hidden: false,
   })
   const [rows, setRows] = useState([])
   const [total, setTotal] = useState(0)
@@ -108,6 +112,7 @@ export default function Attendance() {
         ...(f.user_id ? { user_id: f.user_id } : {}),
         ...(f.from_date ? { from_date: f.from_date + ':00' } : {}),
         ...(f.to_date ? { to_date: f.to_date + ':00' } : {}),
+        ...(f.include_hidden ? { include_hidden: true } : {}),
         limit: PAGE_SIZE,
         offset: p * PAGE_SIZE,
       }
@@ -299,6 +304,28 @@ export default function Attendance() {
               {RANGE_INVERTED}
             </p>
           )}
+        </div>
+
+        {/* Deliberately not sent to the export. The workbook keeps a leaver's
+            punches whichever way this is set, because somebody who resigned
+            on the 12th still worked until the 12th and HR reconciles that
+            month's sheet against payroll. This only governs the table. */}
+        <div className="col-span-2 md:col-span-4 border-t border-gray-100 pt-3">
+          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filters.include_hidden}
+              onChange={(e) => setFilter('include_hidden', e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            Show failed scans and deleted employees
+          </label>
+          <p className="mt-1 ml-6 text-xs text-gray-400">
+            Hidden by default: records the terminal wrote under PIN&nbsp;0 — a device
+            event, or a face or finger that matched nobody — and punches by people
+            since removed from the roster. Nothing is deleted, and the Excel
+            timesheet always includes the latter.
+          </p>
         </div>
       </div>
 

@@ -60,6 +60,21 @@ function StatusBadge({ derived, status }) {
   )
 }
 
+// An inverted range — From after To — matches nothing at all, so left alone
+// it reads as a truthful "No records found" and exports as an empty
+// timesheet. Caught here so the operator is told which field is wrong; the
+// server refuses the same pair, in app/routers/attendance.py.
+const RANGE_INVERTED =
+  'The end of the range is before its start. Pick a To date after the From date.'
+
+// Both values are `datetime-local` strings, "YYYY-MM-DDTHH:mm", so comparing
+// them as text orders them the way comparing the instants would. Deliberately
+// not via Date(): parsing a punch window into the viewer's locale is the bug
+// this page already exists to avoid.
+function rangeInverted(from, to) {
+  return Boolean(from && to && from > to)
+}
+
 export default function Attendance() {
   const [devices, setDevices] = useState([])
   const [employees, setEmployees] = useState([])
@@ -108,7 +123,12 @@ export default function Attendance() {
     }
   }, [])
 
+  const badRange = rangeInverted(filters.from_date, filters.to_date)
+
   useEffect(() => {
+    // Not asked of the server at all: it refuses this pair as well, and a
+    // message under the field beats one under the table.
+    if (rangeInverted(filters.from_date, filters.to_date)) return
     load(filters, page)
   }, [load, filters, page])
 
@@ -116,6 +136,10 @@ export default function Attendance() {
   // server builds the workbook from the same query, so a month picked above
   // comes out whole even though only 50 rows are on screen.
   async function exportExcel() {
+    if (rangeInverted(filters.from_date, filters.to_date)) {
+      setExportError(RANGE_INVERTED)
+      return
+    }
     setExporting(true)
     setExportError('')
     try {
@@ -138,7 +162,13 @@ export default function Attendance() {
     setPage(0)
   }
 
-  const totalPages = Math.ceil(total / PAGE_SIZE)
+  // While the range is inverted no query runs, so `rows` and `total` still
+  // hold the last good filter's answer. Nothing on screen may claim to be a
+  // result of what the fields now say, so the count, the table and the pager
+  // all read from these instead.
+  const shownRows = badRange ? [] : rows
+  const shownTotal = badRange ? 0 : total
+  const totalPages = Math.ceil(shownTotal / PAGE_SIZE)
 
   // Rendered exactly as stored, with no Date() and no toLocaleString(). A
   // punch time is the device's own wall-clock; the browser has no idea what
@@ -159,14 +189,16 @@ export default function Attendance() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold text-gray-900">Attendance</h1>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-400">{total.toLocaleString()} records</span>
+          <span className="text-sm text-gray-400">{shownTotal.toLocaleString()} records</span>
           <button
             onClick={exportExcel}
-            disabled={exporting || loading || total === 0}
+            disabled={exporting || loading || badRange || shownTotal === 0}
             title={
-              total === 0
-                ? 'Nothing matches the current filter'
-                : 'The monthly timesheet: a row per person per day, scored against the shift — hours, lateness, absences'
+              badRange
+                ? RANGE_INVERTED
+                : shownTotal === 0
+                  ? 'Nothing matches the current filter'
+                  : 'The monthly timesheet: a row per person per day, scored against the shift — hours, lateness, absences'
             }
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
           >
@@ -237,9 +269,15 @@ export default function Attendance() {
 
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
+          {/* The pair bounds itself: the picker greys out anything past the
+              To date. A value typed straight into the field still gets
+              through — browsers set it and only mark the input invalid — so
+              the check above is what actually holds the line. */}
           <input
             type="datetime-local"
             value={filters.from_date}
+            max={filters.to_date || undefined}
+            aria-invalid={badRange || undefined}
             onChange={(e) => setFilter('from_date', e.target.value)}
             className="input w-full text-sm"
           />
@@ -250,19 +288,29 @@ export default function Attendance() {
           <input
             type="datetime-local"
             value={filters.to_date}
+            min={filters.from_date || undefined}
+            aria-invalid={badRange || undefined}
+            aria-describedby={badRange ? 'attendance-range-error' : undefined}
             onChange={(e) => setFilter('to_date', e.target.value)}
             className="input w-full text-sm"
           />
+          {badRange && (
+            <p id="attendance-range-error" className="mt-1 text-xs text-red-600">
+              {RANGE_INVERTED}
+            </p>
+          )}
         </div>
       </div>
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {loading ? (
+        {badRange ? (
+          <div className="p-12 text-center text-sm text-red-600">{RANGE_INVERTED}</div>
+        ) : loading ? (
           <div className="p-12 text-center text-sm text-gray-400">Loading…</div>
         ) : error ? (
           <div className="p-12 text-center text-sm text-red-600">{error}</div>
-        ) : rows.length === 0 ? (
+        ) : shownRows.length === 0 ? (
           <div className="p-12 text-center text-sm text-gray-400">No records found.</div>
         ) : (
           <table className="w-full text-sm">
@@ -284,7 +332,7 @@ export default function Attendance() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {shownRows.map((row) => (
                 <tr
                   key={row.id}
                   className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors"

@@ -565,6 +565,46 @@ class ExportGuardTests(ExportTestCase):
         finally:
             db.close()
 
+    def test_a_range_that_ends_before_it_starts_is_refused(self):
+        """An inverted range matches nothing, so left alone it would come out
+        as an empty timesheet with no error anywhere — a wrong answer that
+        looks like a right one. Both endpoints refuse it instead."""
+        res = self.export(from_date="2026-09-30T00:00:00",
+                          to_date="2026-09-01T00:00:00")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("before its start", res.json()["detail"])
+
+        res = self.client.get("/attendance", params={
+            "from_date": "2026-09-30T00:00:00",
+            "to_date": "2026-09-01T00:00:00",
+        })
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("before its start", res.json()["detail"])
+
+    def test_a_refused_range_writes_no_audit_row(self):
+        self.export(from_date="2026-09-30T00:00:00", to_date="2026-09-01T00:00:00")
+
+        db = self.Session()
+        try:
+            self.assertEqual(
+                db.query(AuditLog).filter_by(action="attendance_export").count(), 0)
+        finally:
+            db.close()
+
+    def test_a_single_instant_range_is_not_inverted(self):
+        """From equal to To is a legal, if narrow, filter: both bounds are
+        inclusive, so it selects the punches on that second."""
+        res = self.export(from_date="2026-09-01T08:00:00",
+                          to_date="2026-09-01T08:00:00")
+        self.assertEqual(res.status_code, 200)
+
+        res = self.client.get("/attendance", params={
+            "from_date": "2026-09-01T08:00:00",
+            "to_date": "2026-09-01T08:00:00",
+        })
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["total"], 1)
+
     def test_listing_still_answers_alongside_the_export_route(self):
         """`/attendance/export.xlsx` must not shadow the list endpoint."""
         res = self.client.get("/attendance")

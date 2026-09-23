@@ -21,6 +21,17 @@ router = APIRouter(prefix="/attendance", tags=["attendance"], dependencies=[Depe
 
 
 def _build_query(db, device_sn, user_id, from_date, to_date):
+    # An inverted range is a mistake, not a filter: `timestamp >= 10 May AND
+    # <= 1 May` matches nothing, so the table would answer "No records found"
+    # and the timesheet would come out as an empty grid — both indisputable
+    # and both wrong. Refused here, in the one place the table and the export
+    # share, so neither can drift from the other.
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(
+            status_code=400,
+            detail="The end of the range is before its start. Pick a To date after the From date.",
+        )
+
     q = db.query(AttendanceLog)
     if device_sn:
         q = q.filter(AttendanceLog.device_sn == device_sn)

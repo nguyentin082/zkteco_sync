@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import Icon from './Icon'
 
-function MenuItem({ label, onClick, danger, disabled, hint }) {
+function MenuItem({ label, icon, onClick, danger, disabled, hint }) {
   // `hint` is rendered, not hovered: an action that is unavailable has to say
   // why on the face of it, or an operator cannot tell "does not apply to this
   // device" from "broken". Disabled elements swallow mouse events in some
@@ -13,7 +14,7 @@ function MenuItem({ label, onClick, danger, disabled, hint }) {
       onClick={() => {
         if (!disabled) onClick()
       }}
-      className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
+      className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-start gap-2.5 ${
         disabled
           ? 'text-gray-400 cursor-default'
           : danger
@@ -21,12 +22,21 @@ function MenuItem({ label, onClick, danger, disabled, hint }) {
             : 'text-gray-700 hover:bg-gray-100'
       }`}
     >
-      {label}
-      {hint && (
-        <span className="block text-xs leading-snug text-gray-400 mt-0.5">
-          {hint}
+      {/* Icons are optional per item; when a menu uses them, an item
+          without one still keeps the text column aligned. */}
+      {icon !== undefined && (
+        <span className={`mt-0.5 ${danger || disabled ? '' : 'text-gray-500'}`}>
+          <Icon name={icon} />
         </span>
       )}
+      <span className="min-w-0">
+        {label}
+        {hint && (
+          <span className="block text-xs leading-snug text-gray-400 mt-0.5">
+            {hint}
+          </span>
+        )}
+      </span>
     </button>
   )
 }
@@ -65,7 +75,7 @@ export default function KebabMenu({ items }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-52 bg-white rounded-xl shadow-lg border border-gray-200 p-1 z-40">
+        <div className="absolute right-0 top-full mt-1 w-60 bg-white rounded-xl shadow-lg border border-gray-200 p-1 z-40">
           {items.map((item, i) =>
             item === 'divider' ? (
               <Divider key={i} />
@@ -73,6 +83,7 @@ export default function KebabMenu({ items }) {
               <MenuItem
                 key={item.label}
                 label={item.label}
+                icon={item.icon}
                 danger={item.danger}
                 disabled={item.disabled}
                 hint={item.hint}

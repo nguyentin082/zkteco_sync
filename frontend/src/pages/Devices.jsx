@@ -366,43 +366,47 @@ export default function Devices() {
     const isAcc = (device.protocol || 'att') === 'acc'
 
     return [
-      { label: t('devices.sync.all'), onClick: () => handleSync(device, 'all') },
-      { label: t('devices.sync.employees'), onClick: () => handleSync(device, 'employees') },
+      { label: t('devices.sync.all'), icon: 'sync', onClick: () => handleSync(device, 'all') },
+      { label: t('devices.sync.employees'), icon: 'users', onClick: () => handleSync(device, 'employees') },
       isAcc
         ? {
             label: t('devices.sync.attendance'),
+            icon: 'calendar',
             disabled: true,
             hint: t('devices.menu.sync_attendance_na'),
           }
-        : { label: t('devices.sync.attendance'), onClick: () => handleSync(device, 'attendance') },
-      { label: t('devices.sync.templates'), onClick: () => handleSync(device, 'templates') },
+        : { label: t('devices.sync.attendance'), icon: 'calendar', onClick: () => handleSync(device, 'attendance') },
+      { label: t('devices.sync.templates'), icon: 'fingerprint', onClick: () => handleSync(device, 'templates') },
       'divider',
-      { label: t('devices.menu.manage_users'), onClick: () => setDrawer({ type: 'users', device }) },
-      { label: t('devices.menu.device_info'), onClick: () => setDrawer({ type: 'info', device }) },
-      { label: t('devices.menu.set_clock'), onClick: () => setDrawer({ type: 'clock', device }) },
+      { label: t('devices.menu.manage_users'), icon: 'userPlus', onClick: () => setDrawer({ type: 'users', device }) },
+      { label: t('devices.menu.device_info'), icon: 'info', onClick: () => setDrawer({ type: 'info', device }) },
+      { label: t('devices.menu.set_clock'), icon: 'clock', onClick: () => setDrawer({ type: 'clock', device }) },
       // No command in the access-control protocol addresses the screen, so
       // this is shown unavailable with the reason rather than left clickable
       // (it would open a drawer whose only possible outcome is a 501).
       isAcc
         ? {
             label: t('devices.menu.write_lcd'),
+            icon: 'display',
             disabled: true,
             hint: t('devices.menu.write_lcd_na'),
           }
-        : { label: t('devices.menu.write_lcd'), onClick: () => setDrawer({ type: 'lcd', device }) },
+        : { label: t('devices.menu.write_lcd'), icon: 'display', onClick: () => setDrawer({ type: 'lcd', device }) },
       // The door DOES work here, but it is not the same action it is on an
       // SDK device and the menu says so before it is clicked. See handleUnlock.
       isAcc
         ? {
             label: t('devices.menu.unlock_door'),
+            icon: 'unlock',
             onClick: () => handleUnlock(device),
             hint: t('devices.menu.unlock_door_acc'),
           }
-        : { label: t('devices.menu.unlock_door'), onClick: () => handleUnlock(device) },
-      { label: t('devices.menu.commands'), onClick: () => setDrawer({ type: 'commands', device }) },
+        : { label: t('devices.menu.unlock_door'), icon: 'unlock', onClick: () => handleUnlock(device) },
+      { label: t('devices.menu.commands'), icon: 'terminal', onClick: () => setDrawer({ type: 'commands', device }) },
       'divider',
       {
         label: t('devices.menu.clear_attendance'),
+        icon: 'archiveX',
         danger: true,
         onClick: () => confirmAction(
           t('devices.menu.clear_attendance'),
@@ -414,6 +418,7 @@ export default function Devices() {
       },
       {
         label: t('devices.menu.restart'),
+        icon: 'power',
         danger: true,
         onClick: () => confirmAction(
           t('devices.menu.restart'),
@@ -424,9 +429,9 @@ export default function Devices() {
         ),
       },
       'divider',
-      { label: t('devices.menu.security'), onClick: () => setDrawer({ type: 'security', device }) },
-      { label: t('common.edit'), onClick: () => setModal({ mode: 'edit', device }) },
-      { label: t('common.delete'), danger: true, onClick: () => handleDelete(device) },
+      { label: t('devices.menu.security'), icon: 'shield', onClick: () => setDrawer({ type: 'security', device }) },
+      { label: t('common.edit'), icon: 'pencil', onClick: () => setModal({ mode: 'edit', device }) },
+      { label: t('common.delete'), icon: 'trash', danger: true, onClick: () => handleDelete(device) },
     ]
   }
 

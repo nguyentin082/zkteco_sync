@@ -9,7 +9,7 @@ from zk.exception import ZKErrorConnection, ZKErrorResponse, ZKNetworkError
 from app import config
 from app.database import SessionLocal
 from app.models import AttendanceLog, Device, FingerprintTemplate
-from app.services import employee_sync
+from app.services import employee_sync, zk_attendance
 from app.services.punch_filter import is_person_pin
 
 log = logging.getLogger(__name__)
@@ -276,6 +276,7 @@ def pull_attendance(serial_number: str) -> dict:
 
         conn = None
         records_read = 0
+        read_mode = "full"
         try:
             log.info(
                 "pull_attendance: connecting to %s (%s:%s)",
@@ -285,12 +286,21 @@ def pull_attendance(serial_number: str) -> dict:
             )
             conn = _connect(device)
 
-            records = conn.get_attendance()
+            try:
+                cursor = json.loads(device.attendance_cursor or "null")
+            except ValueError:
+                cursor = None
+            # Only what was added since the last pull, not the whole log
+            # (see app/services/zk_attendance.py).
+            records, new_cursor, read_mode = zk_attendance.read_attendance(conn, cursor)
             records_read = len(records)
             log.info(
-                "pull_attendance: device %s returned %d records from device",
+                "pull_attendance: device %s returned %d records from device "
+                "(%s read of a %d-record log)",
                 serial_number,
                 records_read,
+                read_mode,
+                new_cursor["records"],
             )
 
             # Load the keys already stored for this device in one query, rather
@@ -311,11 +321,19 @@ def pull_attendance(serial_number: str) -> dict:
             # device wall-clock (D10), labelled by the `timezone` column and
             # never converted. UTCDateTime's label is wrong for this column;
             # correcting that is a wider change than this dedup needs.
-            existing = {
+            #
+            # Only keys from the earliest record read onwards: on a tail read
+            # that is a few rows instead of every punch the device ever made.
+            existing_query = db.query(
+                AttendanceLog.user_id, AttendanceLog.timestamp
+            ).filter_by(device_sn=serial_number)
+            if read_mode != "full" and records:
+                existing_query = existing_query.filter(
+                    AttendanceLog.timestamp >= min(r.timestamp for r in records)
+                )
+            existing = set() if not records else {
                 (uid, ts.replace(tzinfo=None) if ts is not None and ts.tzinfo else ts)
-                for uid, ts in db.query(
-                    AttendanceLog.user_id, AttendanceLog.timestamp
-                ).filter_by(device_sn=serial_number)
+                for uid, ts in existing_query
             }
 
             # Devices routinely report the same punch more than once in a single
@@ -370,6 +388,9 @@ def pull_attendance(serial_number: str) -> dict:
             db.commit()
             device.last_seen = datetime.now(timezone.utc)
             device.is_online = True
+            # Moved only once the punches it covers are committed, so a
+            # failed pull is simply read again next time.
+            device.attendance_cursor = json.dumps(new_cursor)
             db.commit()
             log.info(
                 "pull_attendance: done for %s — %d new records inserted",
@@ -410,7 +431,9 @@ def pull_attendance(serial_number: str) -> dict:
                 result["errors"][0]
                 if result["errors"]
                 else f"{result['attendance_synced']} new punches stored "
-                f"({records_read} read from the device)"
+                f"({records_read} read from the device"
+                + (", nothing new on the device" if read_mode == "unchanged" else "")
+                + ")"
             ),
             seconds=time.monotonic() - started,
         )

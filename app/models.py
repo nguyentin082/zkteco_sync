@@ -121,6 +121,12 @@ class Device(Base):
     # queries inside it.
     pull_outcomes = Column(Text, nullable=True)
 
+    # Where the last SDK attendance pull stopped reading the punch log, as
+    # JSON {"records", "anchor", "last", "anchor_is_last"}. Lets the
+    # next pull skip the read when nothing was added and otherwise read only
+    # the tail (app/services/zk_attendance.py). NULL means "read it all".
+    attendance_cursor = Column(Text, nullable=True)
+
     @property
     def comm_key_set(self) -> bool:
         """The only externally-visible fact about the comm key: whether one

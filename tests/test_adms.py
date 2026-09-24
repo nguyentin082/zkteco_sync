@@ -4065,6 +4065,50 @@ class FakeConnection:
         self.written.append(kwargs)
 
 
+class FakeAttendanceLog:
+    """A pyzk connection's punch log, down to the buffered read.
+
+    `_records` is the log in device order. get_attendance() returns all of it
+    (pyzk's full read); the name-mangled calls app/services/zk_attendance.py
+    uses for a tail read serve it as the 40-byte records a real terminal
+    sends, with the timestamp field carrying the record's index so decoding
+    hands back exactly the datetime the test put in. `chunk_reads` records
+    every (start, size) asked for, so a test can see how much was read.
+    """
+
+    tcp = False
+    rec_cap = 100000
+    _records = ()
+
+    def read_sizes(self):
+        self.records = len(self._records)
+
+    def get_attendance(self):
+        self.full_reads = getattr(self, "full_reads", 0) + 1
+        return list(self._records)
+
+    def free_data(self):
+        pass
+
+    def _ZK__send_command(self, command, command_string=b"", response_size=8):
+        from struct import pack
+        self._buffer = b"\0" * 4 + b"".join(
+            pack("<H24sB4sB8s", 0, str(r.user_id).encode(), r.status,
+                 pack("<I", i), r.punch, b"")
+            for i, r in enumerate(self._records)
+        )
+        self._ZK__data = b"\0" + pack("I", len(self._buffer))
+        return {"status": True, "code": 2000}
+
+    def _ZK__read_chunk(self, start, size):
+        self.chunk_reads = getattr(self, "chunk_reads", []) + [(start, size)]
+        return self._buffer[start:start + size]
+
+    def _ZK__decode_time(self, raw):
+        from struct import unpack
+        return self._records[unpack("<I", raw)[0]].timestamp
+
+
 def fake_sdk(conn):
     """Patch for app.routers.devices.device_connection."""
     from contextlib import contextmanager
@@ -5128,7 +5172,7 @@ class SdkAttendancePullDedupTests(AdmsTestCase):
             self.user_id, self.timestamp = user_id, timestamp
             self.status, self.punch = status, punch
 
-    class _FakeConn:
+    class _FakeConn(FakeAttendanceLog):
         """Stands in for a pyzk connection. Returns naive wall-clocks, as the
         real one does — that naivety is the whole point of the test."""
         def __init__(self, records):
@@ -5136,7 +5180,6 @@ class SdkAttendancePullDedupTests(AdmsTestCase):
         def disable_device(self): pass
         def enable_device(self): pass
         def disconnect(self): pass
-        def get_attendance(self): return list(self._records)
 
     def setUp(self):
         super().setUp()
@@ -5197,6 +5240,95 @@ class SdkAttendancePullDedupTests(AdmsTestCase):
             self._FakeAttendance("25020", datetime(2025, 6, 3, 8, 1, 2))
         )
         result = self.poller.pull_attendance(self.SN)
+        self.assertEqual(result["attendance_synced"], 1)
+        self.assertEqual(self.rows(), 4)
+
+    # --- incremental reads (app/services/zk_attendance.py) ---------------
+    #
+    # A terminal holding ~96k punches takes 2-10 minutes to read in full.
+    # After the first pull, only what was appended since should cross the
+    # wire, and a log that changed under the cursor must still be read whole.
+
+    def pull(self):
+        conns = []
+
+        def connect(device):
+            conns.append(self._FakeConn(self.records))
+            return conns[-1]
+
+        self.poller._connect = connect
+        result = self.poller.pull_attendance(self.SN)
+        return result, conns[-1]
+
+    def test_a_repeat_pull_with_nothing_new_reads_no_punches_at_all(self):
+        self.pull()
+        result, conn = self.pull()
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(result["attendance_synced"], 0)
+        self.assertEqual(getattr(conn, "full_reads", 0), 0)
+        self.assertEqual(getattr(conn, "chunk_reads", []), [])
+
+    def test_a_new_punch_is_read_from_the_tail_not_the_whole_log(self):
+        self.pull()
+        self.records.append(
+            self._FakeAttendance("25020", datetime(2025, 6, 3, 8, 1, 2))
+        )
+        result, conn = self.pull()
+        self.assertEqual(result["attendance_synced"], 1)
+        self.assertEqual(self.rows(), 4)
+        self.assertEqual(getattr(conn, "full_reads", 0), 0)
+        # From the anchor (record 3, the last one seen) to the end: 2 records.
+        self.assertEqual(conn.chunk_reads, [(4 + 2 * 40, 2 * 40)])
+
+    def test_a_log_rewritten_under_the_cursor_is_read_in_full(self):
+        """Cleared and refilled past the old count: the anchor is not where
+        the cursor says, so the tail cannot be trusted."""
+        self.pull()
+        self.records[:] = [
+            self._FakeAttendance("30001", datetime(2025, 7, 1, 8, 0, i))
+            for i in range(5)
+        ]
+        result, conn = self.pull()
+        self.assertEqual(conn.full_reads, 1)
+        self.assertEqual(result["attendance_synced"], 5)
+        self.assertEqual(self.rows(), 8)
+
+    def test_a_full_log_is_checked_even_when_its_count_did_not_move(self):
+        """At capacity a terminal can drop its oldest punch for each new one,
+        so an unchanged count proves nothing there."""
+        self.pull()
+        self._FakeConn.rec_cap = len(self.records)
+        self.addCleanup(setattr, self._FakeConn, "rec_cap", FakeAttendanceLog.rec_cap)
+        self.records.pop(0)
+        self.records.append(
+            self._FakeAttendance("25020", datetime(2025, 6, 3, 8, 1, 2))
+        )
+        result, conn = self.pull()
+        self.assertEqual(conn.full_reads, 1)
+        self.assertEqual(result["attendance_synced"], 1)
+
+    def test_a_punch_written_into_a_trailing_blank_slot_is_not_missed(self):
+        """Seen on a ZLM60_TFT: the reported count includes an all-zero slot
+        at the end of the log. Neither can the blank anchor a tail read, nor
+        can an unchanged count be trusted while it is there."""
+        self.records.append(self._FakeAttendance("", datetime(2000, 1, 1)))
+        self.pull()
+        self.records[-1] = self._FakeAttendance("25020", datetime(2025, 6, 3, 8, 1, 2))
+        result, conn = self.pull()
+        self.assertEqual(getattr(conn, "full_reads", 0), 0)
+        self.assertEqual(result["attendance_synced"], 1)
+        self.assertEqual(self.rows(), 4)
+
+    def test_a_failed_pull_does_not_move_the_cursor(self):
+        self.pull()
+        self.records.append(
+            self._FakeAttendance("25020", datetime(2025, 6, 3, 8, 1, 2))
+        )
+        from unittest import mock
+        with mock.patch.object(self.poller, "is_person_pin", side_effect=RuntimeError("boom")):
+            failed, _ = self.pull()
+        self.assertTrue(failed["errors"])
+        result, _ = self.pull()
         self.assertEqual(result["attendance_synced"], 1)
         self.assertEqual(self.rows(), 4)
 
@@ -5403,7 +5535,7 @@ class SdkTemplatePullTests(AdmsTestCase):
             return {"uid": self.uid, "fid": self.fid, "valid": self.valid,
                     "template": self._blob.hex()}
 
-    class _FakeConn:
+    class _FakeConn(FakeAttendanceLog):
         def __init__(self, users, fingers):
             self._users, self._fingers = users, fingers
         def disable_device(self): pass
@@ -5411,7 +5543,6 @@ class SdkTemplatePullTests(AdmsTestCase):
         def disconnect(self): pass
         def get_users(self): return list(self._users)
         def get_templates(self): return list(self._fingers)
-        def get_attendance(self): return []
 
     def setUp(self):
         super().setUp()

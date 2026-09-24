@@ -655,6 +655,11 @@ function RestorePanel({ showToast, onRestored }) {
 
 const AUDIT_PAGE_SIZE = 20
 
+// Temporarily off: this site does not use the HRM attendance sync, so its
+// panel is hidden and its status is not polled. Set to true to bring it back —
+// the backend endpoints and the scheduled job are untouched either way.
+const SHOW_HRM_SYNC = false
+
 function AuditLog() {
   const { t } = useTranslation()
   const [filters, setFilters] = useState({ actor: '', action: '', from_date: '', to_date: '' })
@@ -814,6 +819,7 @@ export default function Settings() {
   }, [])
 
   useEffect(() => {
+    if (!SHOW_HRM_SYNC) return
     load()
     const timer = setInterval(load, 15_000)
     return () => clearInterval(timer)
@@ -904,7 +910,8 @@ export default function Settings() {
     <div className="max-w-6xl">
       <h1 className="text-xl font-semibold text-gray-900 mb-6">{t('nav.settings')}</h1>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      {SHOW_HRM_SYNC && (
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
@@ -1108,9 +1115,10 @@ export default function Settings() {
           </div>
         )}
       </div>
+      )}
 
       {user?.role === 'admin' && (
-        <div className="grid gap-6 md:grid-cols-2 items-start mt-6">
+        <div className="grid gap-6 md:grid-cols-2 items-start">
           <BackupPanel key={backupKey} showToast={showToast} />
           <RestorePanel showToast={showToast} onRestored={() => setBackupKey((n) => n + 1)} />
         </div>

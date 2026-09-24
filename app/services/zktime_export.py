@@ -67,6 +67,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.errors import fragment
 from app.models import AttendanceLog, BiometricTemplate, Device, Employee, FingerprintTemplate
 from app.services.punch_filter import is_person_pin
 from app.services.zktime_backup import ZKTimeBackupError, open_backup
@@ -588,7 +589,8 @@ def build_export(db: Session, template_path: str, out_path: str, *,
         "cleared": cleared,
         "pruned_missing_people": prune_missing,
     }
-    summary["warnings"], summary["notes"] = _warnings(
+    (summary["warnings"], summary["notes"],
+     summary["warning_codes"], summary["note_codes"]) = _warnings(
         db, summary, template_punches, fingerprints
     )
     log.info(
@@ -626,8 +628,11 @@ def _warnings(db: Session, summary: dict, template_punches: int,
     ``notes`` is for arithmetic that is correct and surprising only until
     explained — why 83,160 punches became 83,160 and not 96,345. They are kept
     (an operator reconciling counts needs them) and folded away.
+
+    Each pile has a twin of translation codes, in the same order, for the UI
+    (see app/errors.py) — the English strings stay what logs and tests read.
     """
-    warnings, notes = [], []
+    warnings, notes, warning_codes, note_codes = [], [], [], []
     written = summary["punches"]["written"]
 
     # The footgun this whole feature has: att_punches is replaced wholesale, so
@@ -643,6 +648,9 @@ def _warnings(db: Session, summary: dict, template_punches: int,
             "rather than overwriting it, and restore it here first if you "
             "want one file with everything."
         )
+        warning_codes.append(fragment(
+            "backup.export_fewer_punches", written=written, template=template_punches
+        ))
 
     # SDK-pulled templates the file does not already carry for that finger.
     #
@@ -673,6 +681,12 @@ def _warnings(db: Session, summary: dict, template_punches: int,
             "Fingerprint templates ticked, or Sync Templates on the device, "
             "is what puts a finger in this file."
         )
+        warning_codes.append(fragment(
+            "backup.export_missing_fingerprints"
+            if summary["templates"]["written"]
+            else "backup.export_no_fingerprints",
+            count=len(missing), people=people,
+        ))
 
     stubs = summary["employees"]["stubs"]
     if stubs:
@@ -681,6 +695,7 @@ def _warnings(db: Session, summary: dict, template_punches: int,
             "roster — deleted employees whose punches were kept. They were "
             "written with a blank name so their punches stay in the file."
         )
+        note_codes.append(fragment("backup.export_stubs", count=stubs))
 
     if summary["punches"]["skipped"]:
         notes.append(
@@ -688,6 +703,9 @@ def _warnings(db: Session, summary: dict, template_punches: int,
             "they carry PIN 0, which a terminal writes for a device event or a "
             "scan that matched nobody, and is not attendance."
         )
+        note_codes.append(fragment(
+            "backup.export_skipped_pin0", count=summary["punches"]["skipped"]
+        ))
 
     cleared = summary["cleared"]
     if cleared:
@@ -698,5 +716,9 @@ def _warnings(db: Session, summary: dict, template_punches: int,
             "would put totals in the file that disagree with the punches next "
             "to them. ZKTime recalculates on demand."
         )
+        note_codes.append(fragment("backup.export_cleared", spelled=[
+            fragment("backup.count_from", count=count, table=name)
+            for name, count in cleared.items()
+        ]))
 
-    return warnings, notes
+    return warnings, notes, warning_codes, note_codes

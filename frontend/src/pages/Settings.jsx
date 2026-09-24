@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { serverMessage, translateError } from '../i18n'
+import { serverMessage, translateError, translateFragment } from '../i18n'
 import { api, saveBlobAs } from '../api'
 import { formatDate, formatDateTime, formatNumber } from '../format'
 import { useAuth } from '../auth'
@@ -122,11 +122,21 @@ function Stat({ label, value }) {
   )
 }
 
+// The server's English lines, swapped for the translated ones when it sent a
+// code for each (warning_codes / note_codes, same order). An older server, or
+// a list whose lengths disagree, keeps the English rather than mismatching.
+function localized(lines, codes) {
+  if (!Array.isArray(codes) || codes.length !== lines?.length) return lines
+  return codes.map((c, i) => translateFragment(c) || lines[i])
+}
+
 // Warnings are shown; notes are true, wanted occasionally, and folded away.
 // Five paragraphs of equal weight is how the one that matters gets skipped.
-function Messages({ warnings, notes }) {
+function Messages({ warnings: rawWarnings, notes: rawNotes, warningCodes, noteCodes }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  const warnings = localized(rawWarnings, warningCodes)
+  const notes = localized(rawNotes, noteCodes)
   if (!warnings?.length && !notes?.length) return null
   return (
     <div className="space-y-2">
@@ -313,7 +323,12 @@ function BackupPanel({ showToast }) {
             <Stat label={t('settings.fingerprints')} value={built.templates.written} />
           </div>
 
-          <Messages warnings={built.warnings} notes={built.notes} />
+          <Messages
+            warnings={built.warnings}
+            notes={built.notes}
+            warningCodes={built.warning_codes}
+            noteCodes={built.note_codes}
+          />
 
           <div className="flex gap-2">
             <button
@@ -621,7 +636,12 @@ function RestorePanel({ showToast, onRestored }) {
             />
           </div>
 
-          <Messages warnings={result.warnings} notes={result.notes} />
+          <Messages
+            warnings={result.warnings}
+            notes={result.notes}
+            warningCodes={result.warning_codes}
+            noteCodes={result.note_codes}
+          />
 
           <button onClick={reset} className="text-sm text-blue-600 hover:text-blue-800 underline">
             {t('settings.restore.another')}

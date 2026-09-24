@@ -64,6 +64,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import config
+from app.errors import fragment
 from app.models import AttendanceLog, BiometricTemplate, Device, Employee
 from app.services import employee_sync
 from app.services.punch_filter import is_person_pin
@@ -522,7 +523,8 @@ def restore(db: Session, conn: sqlite3.Connection, *, device_sn: str,
     if "templates" in parts:
         summary["templates"] = _restore_templates(db, conn, device_sn=device_sn)
 
-    summary["warnings"], summary["notes"] = _warnings(
+    (summary["warnings"], summary["notes"],
+     summary["warning_codes"], summary["note_codes"]) = _warnings(
         db, conn, parts, terminal_id,
         created_device=device if device_created else None,
     )
@@ -773,9 +775,9 @@ def _warnings(db: Session, conn: sqlite3.Connection, parts, terminal_id,
 
     ``notes`` is documented behaviour an operator reconciling counts will want
     and nobody needs shouted at them twice. Same split, same reasoning, as
-    ``zktime_export._warnings``.
+    ``zktime_export._warnings``, including the twin lists of translation codes.
     """
-    warnings, notes = [], []
+    warnings, notes, warning_codes, note_codes = [], [], [], []
 
     if created_device is not None:
         # A warning, not a note. The timezone was chosen by a default, and it
@@ -792,6 +794,13 @@ def _warnings(db: Session, conn: sqlite3.Connection, parts, terminal_id,
             "device's page: that relabels these punches too, without moving "
             "any of their digits."
         )
+        warning_codes.append(fragment(
+            "backup.restore_device_created",
+            sn=created_device.serial_number,
+            name=created_device.name or fragment("backup.unnamed"),
+            ip=created_device.ip_address or fragment("backup.unknown"),
+            timezone=created_device.timezone,
+        ))
 
     if "attendance" in parts and "employees" not in parts:
         pins = {pin for pin in _pin_by_row_id(conn).values() if is_person_pin(pin)}
@@ -808,6 +817,9 @@ def _warnings(db: Session, conn: sqlite3.Connection, parts, terminal_id,
                 "screen hides punches whose PIN it cannot name — restore "
                 "Employees too, or tick 'Show hidden records', to see them."
             )
+            warning_codes.append(fragment(
+                "backup.restore_absent_people", absent=absent, total=len(pins)
+            ))
 
     if terminal_id is None and len(list_terminals(conn)) > 1:
         warnings.append(
@@ -815,6 +827,7 @@ def _warnings(db: Session, conn: sqlite3.Connection, parts, terminal_id,
             "chosen, so every punch in it was restored onto the selected "
             "device."
         )
+        warning_codes.append(fragment("backup.restore_multi_terminal"))
 
     ignored = _derived_row_counts(conn)
     if ignored:
@@ -824,5 +837,9 @@ def _warnings(db: Session, conn: sqlite3.Connection, parts, terminal_id,
             "Those are its shift engine's results, not punches; this app "
             "recalculates from the punches themselves."
         )
+        note_codes.append(fragment("backup.restore_derived_ignored", spelled=[
+            fragment("backup.count_in", count=count, table=name)
+            for name, count in ignored.items()
+        ]))
 
-    return warnings, notes
+    return warnings, notes, warning_codes, note_codes

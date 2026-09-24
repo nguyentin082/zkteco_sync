@@ -42,5 +42,21 @@
   "templates_queued": "Đã đưa {{count}} lệnh vào hàng đợi cho {{sn}}: {{templates}} mẫu. Mỗi lần kết nối nhận một lệnh nên mất khoảng {{seconds}} giây, và chưa có gì được gửi cho đến khi thiết bị nhận.",
   "templates_queued_behind": "Đã đưa {{count}} lệnh vào hàng đợi cho {{sn}}: {{templates}} mẫu, xếp sau hồ sơ người dùng và quyền ra cửa mà máy chưa xác nhận. Mỗi lần kết nối nhận một lệnh nên mất khoảng {{seconds}} giây, và chưa có gì được gửi cho đến khi thiết bị nhận.",
   "enroll_started": "Đã bắt đầu đăng ký — người dùng cần quét vân tay trên thiết bị",
-  "employee_deleted": "Đã xóa {{user_id}} khỏi hệ thống. Lịch sử chấm công được giữ lại — đó là dữ liệu thực tế và đã được gửi lên HRM. Nếu thiết bị vẫn còn giữ mã PIN này, lần đồng bộ sau sẽ tạo lại hồ sơ nhân viên từ dữ liệu trên máy; đó là hành vi đúng, không phải lỗi."
+  "employee_deleted": "Đã xóa {{user_id}} khỏi hệ thống. Lịch sử chấm công được giữ lại — đó là dữ liệu thực tế và đã được gửi lên HRM. Nếu thiết bị vẫn còn giữ mã PIN này, lần đồng bộ sau sẽ tạo lại hồ sơ nhân viên từ dữ liệu trên máy; đó là hành vi đúng, không phải lỗi.",
+  "backup": {
+    "export_fewer_punches": "Bản xuất này chứa {{written, number}} lượt chấm, trong khi tệp mẫu dùng để tạo nó có {{template, number}}. Bảng att_punches được thay toàn bộ, nên phần chênh lệch không có trong tệp này. Hãy giữ lại bản sao lưu gốc thay vì ghi đè, và khôi phục nó vào đây trước nếu muốn một tệp chứa đầy đủ.",
+    "export_missing_fingerprints": "{{count, number}} mẫu vân tay kéo qua SDK của {{people, number}} người không có trong bản sao lưu này. Chúng chỉ ở dạng mã hex của pyzk, không phải base64 mà hr_biotemplate dùng, và chưa xác minh được mẫu đọc qua SDK có dùng thay được mẫu ZKTime lưu hay không, nên đã được bỏ ra. Muốn có vân tay trong tệp này, hãy khôi phục một bản sao lưu ZKTime có chọn Mẫu vân tay, hoặc dùng Đồng bộ mẫu sinh trắc trên thiết bị.",
+    "export_no_fingerprints": "{{count, number}} mẫu vân tay kéo qua SDK của {{people, number}} người không có trong bản sao lưu này — tệp không chứa vân tay nào. Chúng chỉ ở dạng mã hex của pyzk, không phải base64 mà hr_biotemplate dùng, và chưa xác minh được mẫu đọc qua SDK có dùng thay được mẫu ZKTime lưu hay không, nên đã được bỏ ra. Muốn có vân tay trong tệp này, hãy khôi phục một bản sao lưu ZKTime có chọn Mẫu vân tay, hoặc dùng Đồng bộ mẫu sinh trắc trên thiết bị.",
+    "export_stubs": "{{count, number}} người có trong lịch sử chấm công nhưng không có trong danh sách nhân viên — là nhân viên đã xóa nhưng dữ liệu chấm công vẫn được giữ. Họ được ghi với tên trống để dữ liệu chấm công vẫn nằm trong tệp.",
+    "export_skipped_pin0": "{{count, number}} bản ghi đã lưu bị bỏ ra: chúng mang PIN 0 — mã máy ghi cho sự kiện thiết bị hoặc lượt quét không khớp ai — nên không phải dữ liệu chấm công.",
+    "export_cleared": "Dữ liệu công đã tính của ZKTime đã được xóa ({{spelled}}). Dữ liệu này được tính từ các lượt chấm mà bản xuất đã thay thế, nên nếu giữ lại, tổng công trong tệp sẽ không khớp với lượt chấm ngay bên cạnh. ZKTime sẽ tự tính lại khi cần.",
+    "count_from": "{{count, number}} từ {{table}}",
+    "count_in": "{{count, number}} trong {{table}}",
+    "unnamed": "chưa đặt tên",
+    "unknown": "không rõ",
+    "restore_device_created": "Thiết bị {{sn}} chưa được đăng ký ở đây, nên đã được tạo từ tệp này và duyệt dưới tên bạn (tên: {{name}}, IP: {{ip}}). Múi giờ của nó là mặc định, {{timezone}} — các lượt chấm vừa khôi phục được gắn nhãn theo múi giờ này. Nếu sai múi giờ, hãy đổi trên trang thiết bị: việc đó cũng gắn lại nhãn cho các lượt chấm này mà không thay đổi giờ đã ghi.",
+    "restore_absent_people": "{{absent, number}} trong số {{total, number}} người trong tệp không có trong danh sách nhân viên. Lượt chấm của họ đã được lưu, nhưng màn hình Chấm công ẩn các lượt chấm có PIN không xác định được tên — hãy khôi phục cả Nhân viên, hoặc bật 'Hiện bản ghi ẩn' để xem.",
+    "restore_multi_terminal": "Tệp này có nhiều hơn một máy và chưa chọn máy nào, nên toàn bộ lượt chấm trong tệp đã được khôi phục vào thiết bị đã chọn.",
+    "restore_derived_ignored": "Dữ liệu công đã tính của ZKTime ({{spelled}}) không được nhập. Đó là kết quả của bộ tính ca của ZKTime, không phải lượt chấm; ứng dụng này tự tính lại từ chính các lượt chấm."
+  }
 }

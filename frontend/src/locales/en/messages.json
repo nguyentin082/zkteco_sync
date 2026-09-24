@@ -42,5 +42,21 @@
   "templates_queued": "Queued {{count}} commands for {{sn}}: {{templates}} template(s). At one command per poll this takes roughly {{seconds}} seconds, and nothing is delivered until the device collects it — this is not delivered yet.",
   "templates_queued_behind": "Queued {{count}} commands for {{sn}}: {{templates}} template(s) behind the person's user record and door permission, which this terminal has not confirmed yet. At one command per poll this takes roughly {{seconds}} seconds, and nothing is delivered until the device collects it — this is not delivered yet.",
   "enroll_started": "Enrollment started — the person must scan their finger on the device",
-  "employee_deleted": "{{user_id}} removed from the system. Attendance history is kept — those rows are historical fact and already reached the HRM. If a device still holds this PIN, a future sync will re-create the employee record from what the terminal reports; that is correct behaviour, not a bug."
+  "employee_deleted": "{{user_id}} removed from the system. Attendance history is kept — those rows are historical fact and already reached the HRM. If a device still holds this PIN, a future sync will re-create the employee record from what the terminal reports; that is correct behaviour, not a bug.",
+  "backup": {
+    "export_fewer_punches": "This export holds {{written, number}} punches; the template you built it from held {{template, number}}. att_punches is replaced in full, so the difference is not in this file. Keep the original backup rather than overwriting it, and restore it here first if you want one file with everything.",
+    "export_missing_fingerprints": "{{count, number}} SDK-pulled fingerprint template(s) across {{people, number}} person/people are not in this backup. They exist only in pyzk's hex encoding, not the base64 hr_biotemplate uses, and whether a template read over the SDK is interchangeable with one ZKTime stores has not been verified, so they were left out. Restoring a ZKTime backup with Fingerprint templates ticked, or Sync Templates on the device, is what puts a finger in this file.",
+    "export_no_fingerprints": "{{count, number}} SDK-pulled fingerprint template(s) across {{people, number}} person/people are not in this backup — it carries no fingerprints at all. They exist only in pyzk's hex encoding, not the base64 hr_biotemplate uses, and whether a template read over the SDK is interchangeable with one ZKTime stores has not been verified, so they were left out. Restoring a ZKTime backup with Fingerprint templates ticked, or Sync Templates on the device, is what puts a finger in this file.",
+    "export_stubs": "{{count, number}} person/people appear in attendance history but not on the roster — deleted employees whose punches were kept. They were written with a blank name so their punches stay in the file.",
+    "export_skipped_pin0": "{{count, number}} stored record(s) were left out: they carry PIN 0, which a terminal writes for a device event or a scan that matched nobody, and is not attendance.",
+    "export_cleared": "ZKTime's calculated attendance was cleared ({{spelled}}). It was computed from the punches this export replaced, so keeping it would put totals in the file that disagree with the punches next to them. ZKTime recalculates on demand.",
+    "count_from": "{{count, number}} from {{table}}",
+    "count_in": "{{count, number}} in {{table}}",
+    "unnamed": "unnamed",
+    "unknown": "unknown",
+    "restore_device_created": "Device {{sn}} was not registered here, so it was created from this file and approved in your name (name: {{name}}, IP: {{ip}}). Its timezone is the default, {{timezone}} — the restored punches are labelled with it. If that is the wrong zone, change it on the device's page: that relabels these punches too, without moving any of their digits.",
+    "restore_absent_people": "{{absent, number}} of the {{total, number}} people in this file are not on the roster. Their restored punches are stored, but the Attendance screen hides punches whose PIN it cannot name — restore Employees too, or tick 'Show hidden records', to see them.",
+    "restore_multi_terminal": "This file holds more than one terminal and no terminal was chosen, so every punch in it was restored onto the selected device.",
+    "restore_derived_ignored": "ZKTime's own calculated attendance ({{spelled}}) was not imported. Those are its shift engine's results, not punches; this app recalculates from the punches themselves."
+  }
 }

@@ -49,16 +49,21 @@ export function intlLocale() {
   return i18n.language === 'en' ? 'en-US' : 'vi-VN'
 }
 
-// Params may carry fragments — {code, params} — for a sentence the server
-// built from parts; each becomes its own translated text first.
+const isFragment = (value) => value && typeof value === 'object' && 'code' in value
+
+// One fragment — {code, params} — as text; an empty code is no text at all.
+export function translateFragment(fragment) {
+  return fragment?.code ? i18n.t(`messages.${fragment.code}`, resolveParams(fragment.params)) : ''
+}
+
+// Params may carry fragments for a sentence the server built from parts, or
+// a list of them (read as "a, b, c"); each becomes its own translated text.
 function resolveParams(params) {
   const out = {}
   for (const [key, value] of Object.entries(params || {})) {
-    if (value && typeof value === 'object' && 'code' in value) {
-      out[key] = value.code ? i18n.t(`messages.${value.code}`, resolveParams(value.params)) : ''
-    } else {
-      out[key] = value
-    }
+    if (isFragment(value)) out[key] = translateFragment(value)
+    else if (Array.isArray(value) && value.every(isFragment)) out[key] = value.map(translateFragment).join(', ')
+    else out[key] = value
   }
   return out
 }

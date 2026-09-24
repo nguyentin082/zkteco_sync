@@ -1662,6 +1662,31 @@ class MessageSplitTests(ExportTestCase):
         self.assertTrue(any("shift engine" in n for n in summary["notes"]))
         self.assertFalse(any("shift engine" in w for w in summary["warnings"]))
 
+    def test_every_message_has_a_translation_code_in_the_same_position(self):
+        """The UI swaps each English line for warning_codes[i] / note_codes[i];
+        a list that drifts out of step would put one sentence's text under
+        another's meaning, so the two must pair up one to one."""
+        db = self.Session()
+        self.addCleanup(db.close)
+        db.add(FingerprintTemplate(user_id="201", finger_id=1, valid=1,
+                                   template="deadbeef", source_device_sn=SN))
+        db.add(AttendanceLog(device_sn=SN, user_id="0",
+                             timestamp=datetime(2024, 7, 1, 9, 0), status=0, punch=1,
+                             source="adms_push", timezone="Asia/Ho_Chi_Minh"))
+        db.commit()
+        export = zktime_export.build_export(db, self.path, self.out)
+        db.query(Employee).delete()
+        db.commit()
+        restore = zktime_backup.restore(
+            db, self.open(), device_sn=SN, terminal_id=1, parts=("attendance",)
+        )
+        for summary in (export, restore):
+            self.assertTrue(summary["warnings"] and summary["notes"], summary)
+            self.assertEqual(len(summary["warning_codes"]), len(summary["warnings"]))
+            self.assertEqual(len(summary["note_codes"]), len(summary["notes"]))
+            for entry in summary["warning_codes"] + summary["note_codes"]:
+                self.assertTrue(entry["code"].startswith("backup."), entry)
+
     def test_both_keys_are_always_present_so_the_ui_never_branches_on_absence(self):
         db = self.Session()
         self.addCleanup(db.close)

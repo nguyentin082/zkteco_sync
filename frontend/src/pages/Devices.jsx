@@ -455,17 +455,30 @@ export default function Devices() {
     const isAcc = (device.protocol || 'att') === 'acc'
 
     return [
-      { label: t('devices.sync.all'), icon: 'sync', onClick: () => handleSync(device, 'all') },
-      { label: t('devices.sync.employees'), icon: 'users', onClick: () => handleSync(device, 'employees') },
-      isAcc
-        ? {
-            label: t('devices.sync.attendance'),
-            icon: 'calendar',
-            disabled: true,
-            hint: t('devices.menu.sync_attendance_na'),
-          }
-        : { label: t('devices.sync.attendance'), icon: 'calendar', onClick: () => handleSync(device, 'attendance') },
-      { label: t('devices.sync.templates'), icon: 'fingerprint', onClick: () => handleSync(device, 'templates') },
+      // "Sync all" leads, and says what it runs; the three it runs sit
+      // indented beneath it so the menu shows they are its parts.
+      {
+        label: t('devices.sync.all'),
+        icon: 'sync',
+        primary: true,
+        hint: PULL_KINDS.map(pullKindLabel).join(' · '),
+        onClick: () => handleSync(device, 'all'),
+      },
+      { heading: t('devices.menu.sync_each') },
+      {
+        group: [
+          { label: t('devices.sync.employees'), icon: 'users', onClick: () => handleSync(device, 'employees') },
+          isAcc
+            ? {
+                label: t('devices.sync.attendance'),
+                icon: 'calendar',
+                disabled: true,
+                hint: t('devices.menu.sync_attendance_na'),
+              }
+            : { label: t('devices.sync.attendance'), icon: 'calendar', onClick: () => handleSync(device, 'attendance') },
+          { label: t('devices.sync.templates'), icon: 'fingerprint', onClick: () => handleSync(device, 'templates') },
+        ],
+      },
       'divider',
       { label: t('devices.menu.manage_users'), icon: 'userPlus', onClick: () => setDrawer({ type: 'users', device }) },
       { label: t('devices.menu.device_info'), icon: 'info', onClick: () => setDrawer({ type: 'info', device }) },

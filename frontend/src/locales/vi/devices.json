@@ -42,6 +42,7 @@
   "restarting": "{{device}} đang khởi động lại",
   "door_unlocked": "Đã mở cửa trên {{device}}",
   "menu": {
+    "sync_each": "Hoặc đồng bộ từng phần",
     "sync_attendance_na": "Không áp dụng — máy này tự đẩy dữ liệu chấm công lên, kể cả dữ liệu lưu tạm khi mất kết nối.",
     "manage_users": "Quản lý người dùng",
     "device_info": "Thông tin thiết bị",

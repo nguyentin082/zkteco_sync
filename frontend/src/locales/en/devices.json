@@ -42,6 +42,7 @@
   "restarting": "{{device}} is restarting",
   "door_unlocked": "Door unlocked on {{device}}",
   "menu": {
+    "sync_each": "Or sync one part",
     "sync_attendance_na": "Not applicable — this terminal pushes punches up by itself, including anything it buffered while offline.",
     "manage_users": "Manage Users",
     "device_info": "Device Info",

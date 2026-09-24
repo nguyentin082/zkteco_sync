@@ -47,11 +47,12 @@ the first one instead of racing it into a unique-constraint violation.
 import logging
 from datetime import datetime, timezone
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.errors import CodedError
 from app.models import (
-    BiometricTemplate, DeviceEmployee, Employee, EmployeePhoto,
+    AttendanceLog, BiometricTemplate, DeviceEmployee, Employee, EmployeePhoto,
     FingerprintTemplate,
 )
 
@@ -236,6 +237,42 @@ def unlink_device_employee(db: Session, device_sn: str, user_id: str) -> bool:
 _UNSET = object()
 
 
+# Every table a PIN can live in. A suggested PIN must be free in all of them,
+# not only in `employees`: a PIN still on a terminal, or one whose owner was
+# deleted but whose punches are kept, would hand the new person somebody
+# else's enrolment or attendance history.
+_PIN_TABLES = (
+    Employee, DeviceEmployee, AttendanceLog, FingerprintTemplate,
+    BiometricTemplate, EmployeePhoto,
+)
+
+# Terminals store the PIN as a number, and older firmware caps it at 9 digits.
+_SUGGESTED_PIN_DIGITS = 9
+
+
+def next_user_id(db: Session) -> str:
+    """The smallest numeric PIN nobody has ever used, counting up from 1.
+
+    "Used" means present in any table above, attendance history included, so
+    a gap left by a deleted person whose punches are kept is not reused.
+    Compared as numbers, because the terminal reads "0042" and "42" as the
+    same PIN.
+
+    Only a suggestion — two operators asking at once get the same answer.
+    create_employee is what actually guarantees uniqueness.
+    """
+    used = set()
+    for model in _PIN_TABLES:
+        used.update(
+            int(uid) for (uid,) in db.query(model.user_id).distinct()
+            if uid and uid.isdigit() and len(uid) <= _SUGGESTED_PIN_DIGITS
+        )
+    candidate = 1
+    while candidate in used:
+        candidate += 1
+    return str(candidate)
+
+
 def create_employee(db: Session, user_id, *, name="", privilege=0, card=""):
     """Create one employee row from operator input.
 
@@ -247,10 +284,11 @@ def create_employee(db: Session, user_id, *, name="", privilege=0, card=""):
     if not user_id:
         raise CodedError("employee.user_id_required", "A user ID (PIN) is required")
 
+    taken = CodedError(
+        "employee.user_id_taken", f"User ID {user_id} already exists", user_id=user_id
+    )
     if db.query(Employee).filter_by(user_id=user_id).first():
-        raise CodedError(
-            "employee.user_id_taken", f"User ID {user_id} already exists", user_id=user_id
-        )
+        raise taken
 
     emp = Employee(
         user_id=user_id,
@@ -261,7 +299,14 @@ def create_employee(db: Session, user_id, *, name="", privilege=0, card=""):
         card=(str(card or "").strip()[:_CARD_LIMIT] or "0"),
     )
     db.add(emp)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        # Another request created the same PIN between the check above and
+        # this insert (two operators taking the same suggested PIN). The
+        # unique index is the real guarantee; report it as the same refusal.
+        db.rollback()
+        raise taken
     log.info("employee %s created by an operator", user_id)
     return emp
 

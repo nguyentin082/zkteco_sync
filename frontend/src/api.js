@@ -253,6 +253,9 @@ export const api = {
     // Admin-only. Creating a person here does NOT put them on any device —
     // that is a separate, explicit per-device push.
     create: (data) => request('POST', '/employees', data),
+    // Admin-only. A free PIN for the create form — a suggestion, not a
+    // reservation: create still refuses it if someone took it meanwhile.
+    nextId: () => request('GET', '/employees/next-id'),
     // Only the fields passed are touched; an empty string clears one. That is
     // the difference between an operator edit and a device upload, which may
     // never empty a field out.

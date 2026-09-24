@@ -38,6 +38,16 @@ def list_employees(db: Session = Depends(get_db)):
     return db.query(Employee).order_by(Employee.name).all()
 
 
+@router.get("/next-id", dependencies=[Depends(require_admin)])
+def suggest_employee_id(db: Session = Depends(get_db)):
+    """A free PIN for the create form's generate button.
+
+    Declared before /{user_id} so "next-id" is not read as a PIN. It is only a
+    suggestion: the create call still refuses a PIN taken in the meantime.
+    """
+    return {"user_id": employee_sync.next_user_id(db)}
+
+
 @router.post("", response_model=EmployeeOut, status_code=201)
 def create_employee(
     payload: EmployeeCreate,

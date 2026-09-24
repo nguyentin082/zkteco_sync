@@ -4251,6 +4251,71 @@ class EmployeeCreationTests(ProvisioningTestCase):
         self.assertEqual(response.status_code, 409, response.text)
         self.assertEqual(self.employee("9001").name, "Aisha Rahman")
 
+    # -- suggested PINs ----------------------------------------------------
+
+    def next_id(self):
+        response = self.client.get("/employees/next-id")
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()["user_id"]
+
+    def test_the_first_suggested_pin_is_one(self):
+        self.assertEqual(self.next_id(), "1")
+
+    def test_the_suggestion_is_the_smallest_unused_pin(self):
+        for pin in ("1", "2", "4", "12", "abc"):
+            self.create_employee(pin)
+        self.assertEqual(self.next_id(), "3")
+
+    def test_the_suggestion_skips_pins_held_outside_the_employees_table(self):
+        """A PIN still on a terminal, or kept on a deleted person's punches,
+        is not free: reusing it would hand somebody else's history over."""
+        self.create_employee("1")
+        db = self.Session()
+        try:
+            db.add(DeviceEmployee(device_sn=self.ATT_SN, user_id="2", uid=1))
+            db.add(AttendanceLog(device_sn=self.ATT_SN, user_id="3", status=0,
+                                 source="adms_push", timezone="UTC",
+                                 timestamp=datetime(2026, 1, 5, 8, 0)))
+            db.commit()
+        finally:
+            db.close()
+        self.assertEqual(self.next_id(), "4")
+
+    def test_a_zero_padded_pin_blocks_the_same_number(self):
+        self.create_employee("1")
+        self.create_employee("0002")
+        self.assertEqual(self.next_id(), "3")
+
+    def test_a_suggested_pin_can_be_created(self):
+        self.create_employee("1")
+        pin = self.next_id()
+        self.assertEqual(self.create_employee(pin).status_code, 201)
+        self.assertEqual(self.next_id(), "3")
+
+    def test_a_pin_taken_between_check_and_insert_is_refused_not_a_crash(self):
+        """Two operators saving the same suggested PIN at once: both pass the
+        existence check, and the unique index refuses the second insert."""
+        from unittest import mock
+        from sqlalchemy.orm import Query
+        self.create_employee("9001", name="Aisha Rahman")
+        real_first = Query.first
+
+        def blind_first(query):
+            # Pretend the check ran before the other operator's commit.
+            if query.column_descriptions[0]["entity"] is Employee:
+                return None
+            return real_first(query)
+
+        with mock.patch.object(Query, "first", blind_first):
+            db = self.Session()
+            try:
+                with self.assertRaises(ValueError) as caught:
+                    employee_sync.create_employee(db, "9001", name="Someone Else")
+                self.assertEqual(caught.exception.code, "employee.user_id_taken")
+            finally:
+                db.close()
+        self.assertEqual(self.employee("9001").name, "Aisha Rahman")
+
     def test_creation_and_editing_go_through_the_shared_writer(self):
         """Structural, not behavioural: E1 removed a competing writer to make
         employee_sync the only one. This fails if anyone adds a third."""

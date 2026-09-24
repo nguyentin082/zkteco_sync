@@ -148,9 +148,27 @@ function EmployeeForm({ employee, onDone, onCancel }) {
     privilege: employee?.privilege ?? 0,
   })
   const [saving, setSaving] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const [error, setError] = useState(null)
 
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }))
+
+  // The server picks the smallest PIN never used anywhere — employees,
+  // terminals, kept attendance — so a generated PIN never inherits somebody
+  // else's history. Returns the PIN so a failed create can offer a fresh one.
+  async function generateUserId() {
+    setGenerating(true)
+    try {
+      const { user_id } = await api.employees.nextId()
+      set('user_id', user_id)
+      return user_id
+    } catch (err) {
+      setError(err.message)
+      return null
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -172,6 +190,12 @@ function EmployeeForm({ employee, onDone, onCancel }) {
       onDone(saved, editing)
     } catch (err) {
       setError(err.message)
+      // Somebody else took this PIN between suggesting and saving it. Put a
+      // fresh one in the box rather than leaving the operator to guess.
+      if (!editing && err.code === 'employee.user_id_taken') {
+        const fresh = await generateUserId()
+        if (fresh) setError(t('employees.user_id_taken_regenerated', { old: form.user_id.trim(), user_id: fresh }))
+      }
     } finally {
       setSaving(false)
     }
@@ -194,13 +218,24 @@ function EmployeeForm({ employee, onDone, onCancel }) {
             label={t('employees.user_id_pin')}
             hint={t('employees.user_id_hint')}
           >
-            <input
-              className="input w-full text-sm"
-              value={form.user_id}
-              onChange={(e) => set('user_id', e.target.value)}
-              required
-              maxLength={24}
-            />
+            <div className="flex gap-2">
+              <input
+                className="input w-full text-sm"
+                value={form.user_id}
+                onChange={(e) => set('user_id', e.target.value)}
+                required
+                maxLength={24}
+              />
+              <button
+                type="button"
+                onClick={generateUserId}
+                disabled={generating || saving}
+                title={t('employees.generate_user_id_title')}
+                className="shrink-0 text-sm font-medium text-blue-600 hover:text-blue-700 border border-gray-200 hover:bg-gray-50 disabled:opacity-40 px-3 rounded-lg transition-colors"
+              >
+                {generating ? t('employees.generating_user_id') : t('employees.generate_user_id')}
+              </button>
+            </div>
           </Field>
         )}
 

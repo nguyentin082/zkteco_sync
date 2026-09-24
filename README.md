@@ -52,6 +52,20 @@ See [DEPLOY.md](DEPLOY.md) — one image for backend + UI, one compose file
 with a bundled MariaDB (or point it at a database you already have), and the
 one setting (`TRUSTED_PROXIES`) that differs from a native install.
 
+### Starting MariaDB in Docker
+
+The bundled database reads `DB_NAME`, `DB_USER` and `DB_PASSWORD` straight out
+of `.env` — `docker-compose.yml` passes them to the image as its `MARIADB_*`
+variables, so there is nothing to configure twice:
+
+```bash
+docker compose up -d db
+```
+
+The data lives in the `zkteco-sync_dbdata` volume, not in the container, so
+restarting or rebuilding the container keeps it. `docker compose down -v`
+deletes it.
+
 ### Guided installer (recommended for a bare-metal install)
 
 The installer handles everything interactively — configuration, dependencies, frontend build, and optional service registration.
@@ -290,6 +304,26 @@ device here to file its punches under, then Restore. Times are stored exactly
 as the file records them and labelled with that device's timezone; nothing is
 shifted. It only ever adds, and a second run inserts nothing.
 
+**The device does not have to be registered first.** A terminal that was never
+pointed at this server has never announced itself, and it is exactly the one
+whose punches exist nowhere else — so the picker offers the file's own
+terminals too, and restoring onto one registers it from the file's
+`att_terminal` row (serial, name, IP, port), approved in your name and audited
+as `device_create`. Only a serial the file actually names can be created this
+way. The new device gets `DEFAULT_DEVICE_TIMEZONE`, which is what its restored
+punches are labelled with; if that is the wrong zone, `PATCH
+/devices/{sn}/timezone` relabels them all without touching a stored digit.
+
+**The device does not have to be registered first.** A terminal that was never
+pointed at this server has never announced itself, and it is exactly the one
+whose punches exist nowhere else — so the picker offers the file's own
+terminals too, and restoring onto one registers it from the file's
+`att_terminal` row (serial, name, IP, port), approved in your name. Only a
+serial the file actually names can be created this way. The new device gets
+`DEFAULT_DEVICE_TIMEZONE`, which is what its restored punches are labelled
+with; if that is the wrong zone, `PATCH /devices/{sn}/timezone` relabels them
+all without touching a single stored digit.
+
 | Part | Default | |
 |---|---|---|
 | Employees | on | Fills blanks; never overwrites a field an operator filled |
@@ -343,6 +377,12 @@ npm run dev --prefix frontend
 ```
 
 The Vite dev server proxies `/api` to `http://localhost:8000` automatically.
+
+`DB_HOST` in `.env` stays `127.0.0.1` even when the database runs in Docker:
+`db` is a name that only exists inside the compose network, and the `db`
+service publishes `127.0.0.1:3306` for everything outside it. The app
+container does not read that value — `docker-compose.yml` pins its own
+`DB_HOST` to the service name — so one `.env` serves both.
 
 ## Acknowledgements
 

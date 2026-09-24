@@ -385,11 +385,16 @@ function RestorePanel({ showToast, onRestored }) {
       // whose serial matches a device registered here. A guess would be worse
       // than an empty box, because punches restored onto the wrong device are
       // labelled with the wrong timezone.
+      //
+      // The one-terminal file is the exception, and it is the common case for
+      // a terminal that has never reached this server: there is nothing to
+      // guess between, its serial is in the file, and the restore will
+      // register it. Preselecting it is what keeps that from being a detour
+      // through the Devices page for a machine the operator cannot reach.
+      const only = data.preview.terminals.length === 1 ? data.preview.terminals[0] : null
       const match = data.preview.terminals.find((t) => t.registered_here)
-      setTerminalId(data.preview.terminals.length === 1
-        ? String(data.preview.terminals[0].terminal_id)
-        : match ? String(match.terminal_id) : '')
-      setDeviceSn(match?.serial || '')
+      setTerminalId(only ? String(only.terminal_id) : match ? String(match.terminal_id) : '')
+      setDeviceSn(only?.serial || match?.serial || '')
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
@@ -438,6 +443,15 @@ function RestorePanel({ showToast, onRestored }) {
 
   const preview = staged?.preview
   const chosenCount = Object.values(parts).filter(Boolean).length
+  // Terminals in the file that this app has never heard from. Offered as
+  // restore targets rather than hidden, because a terminal that was never
+  // pointed at this server is exactly the one whose punches exist nowhere
+  // else — the whole reason the file is being restored. The server creates
+  // the device from the file's own record of it.
+  const newTerminals = (preview?.terminals || []).filter(
+    (t) => t.serial && !t.registered_here
+  )
+  const willCreate = newTerminals.find((t) => t.serial === deviceSn)
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
@@ -489,7 +503,10 @@ function RestorePanel({ showToast, onRestored }) {
                 onChange={(e) => {
                   setTerminalId(e.target.value)
                   const t = preview.terminals.find((x) => String(x.terminal_id) === e.target.value)
-                  if (t?.registered_here) setDeviceSn(t.serial)
+                  // Follows the terminal whether or not it is registered —
+                  // an unregistered one is an offer to create it, not a dead
+                  // end, so it belongs in the box like any other choice.
+                  if (t?.serial) setDeviceSn(t.serial)
                 }}
                 className="w-full border border-gray-300 rounded-lg px-2.5 py-2 text-sm"
               >
@@ -516,6 +533,18 @@ function RestorePanel({ showToast, onRestored }) {
                     {d.name || d.serial_number} ({d.timezone})
                   </option>
                 ))}
+                {/* Grouped, and labelled with what picking one does, so that
+                    "add this device" is never something that happens without
+                    having been read first. */}
+                {newTerminals.length > 0 && (
+                  <optgroup label="In this file — will be added">
+                    {newTerminals.map((t) => (
+                      <option key={t.serial} value={t.serial}>
+                        {t.name || t.serial} ({t.serial})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
           </div>
@@ -549,6 +578,21 @@ function RestorePanel({ showToast, onRestored }) {
                           rounded-lg px-3 py-2 leading-relaxed">
               Without Employees, punches for anyone off the roster are stored but
               hidden on the Attendance screen.
+            </p>
+          )}
+
+          {/* The timezone is the part worth saying before the click rather
+              than in the summary after it: it is the label every restored
+              punch gets, and it comes from a default nobody picked. */}
+          {willCreate && (
+            <p className="text-xs text-blue-900 bg-blue-50 border border-blue-100
+                          rounded-lg px-3 py-2 leading-relaxed">
+              {willCreate.name || willCreate.serial} is not registered here yet.
+              Restoring adds it from this file
+              {willCreate.ip_address ? ` (${willCreate.ip_address})` : ''}, approved
+              in your name, with the default timezone. Check that timezone on the
+              device&rsquo;s page afterwards &mdash; the restored punches are
+              labelled with it.
             </p>
           )}
 

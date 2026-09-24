@@ -16,6 +16,11 @@ without restoring anything can set the template directly.
 Everything here is admin-only. A backup file is a complete staff record —
 names, PINs, card numbers and fingerprint templates — and a restore writes
 directly into attendance history, which is what payroll is reconciled against.
+A restore can also *register* a device: the terminal whose punches these are
+has usually never reached this server, so it is created from the file's own
+record of it rather than demanded up front (zktime_backup.adopt_terminal).
+That grants a serial trust, so it is audited under `device_create`, the same
+action POST /devices records.
 
 The body of an upload is raw bytes, not a multipart form. A ZKTime backup is
 one file with no accompanying fields, multipart would wrap tens of megabytes
@@ -435,6 +440,7 @@ def restore_backup(payload: RestoreRequest, request: Request,
             device_sn=payload.device_sn,
             terminal_id=payload.terminal_id,
             parts=tuple(payload.parts),
+            created_by=admin.username,
         )
     except ZKTimeBackupError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -466,6 +472,17 @@ def restore_backup(payload: RestoreRequest, request: Request,
     # failure it stays until the TTL, so a re-run does not need another 19 MB
     # upload.
     _discard(payload.token)
+
+    # Recorded under the same action as POST /devices, not folded into the
+    # restore's own line: a device becoming trusted is a fact the roster is
+    # read for, and it must be findable there whichever route created it.
+    if summary.get("device_created"):
+        audit.record(
+            db, admin.username, "device_create", target=payload.device_sn,
+            ip=client_ip(request),
+            detail="registered from a ZKTime backup file during restore; "
+                   f"timezone {summary.get('device_timezone')}",
+        )
 
     audit.record(
         db, admin.username, "zktime_backup_restore", target=payload.device_sn,

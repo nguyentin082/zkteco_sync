@@ -89,7 +89,11 @@ function Hand({ ids, mirrored, stateOf, selected, onSelect }) {
 }
 
 /**
- * @param templates  rows from GET /employees/{id}/templates — `finger_id`, `valid`
+ * @param templates  one row per enrolled finger, each with `finger_id` and
+ *                   `valid`. The caller merges the two tables a template can
+ *                   live in (SDK `fingerprint_templates` and `biometric_templates`,
+ *                   where a fingerprint is `type=1` and `no` is the finger id),
+ *                   so this component never has to know which one it came from.
  * @param selected   finger id currently picked, or null
  * @param onSelect   called with a finger id; omit to render read-only
  */

@@ -58,11 +58,12 @@ import binascii
 import logging
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import config
 from app.models import AttendanceLog, BiometricTemplate, Device, Employee
 from app.services import employee_sync
 from app.services.punch_filter import is_person_pin
@@ -266,7 +267,8 @@ def list_terminals(conn: sqlite3.Connection) -> list:
     describes the terminal's lifetime, not the file's contents.
     """
     rows = conn.execute(
-        "SELECT id, terminal_sns, terminal_sn, terminal_name, terminal_tcpip "
+        "SELECT id, terminal_sns, terminal_sn, terminal_name, terminal_tcpip, "
+        "       terminal_port "
         "FROM att_terminal ORDER BY id"
     ).fetchall()
 
@@ -286,6 +288,10 @@ def list_terminals(conn: sqlite3.Connection) -> list:
             "serial": serial,
             "name": _text(row["terminal_name"]),
             "ip_address": _text(row["terminal_tcpip"]),
+            # Carried so a device can be registered from this row alone; see
+            # adopt_terminal. 0 in a file that never used TCP, hence the
+            # fallback there rather than here — this stays what the file says.
+            "port": _int(row["terminal_port"], 0),
             "punches": counted[0] or 0,
             "first_punch": _text(counted[1]) or None,
             "last_punch": _text(counted[2]) or None,
@@ -379,33 +385,107 @@ def _derived_row_counts(conn: sqlite3.Connection) -> dict:
 # Restoring
 # ---------------------------------------------------------------------------
 
+def adopt_terminal(db: Session, conn: sqlite3.Connection, device_sn: str,
+                   created_by: str = None) -> Device:
+    """Register a device from the file's own ``att_terminal`` row.
+
+    The terminal that recorded these punches is usually the reason the backup
+    is being restored at all: it is offline, or was never pointed at this
+    server, so it has never announced itself and there is no ``devices`` row
+    for it. Requiring the operator to go and type the serial in by hand first
+    is asking them to copy four fields out of a file this code is already
+    reading — and to get the serial exactly right, from a terminal they cannot
+    currently reach.
+
+    So the row is built from the file instead. **Only from the file**: a
+    serial that is not one of this backup's terminals is still refused, which
+    is the part of "a restore will not invent a device" that was ever load
+    bearing. What is created is not an invention, it is what ZKTime recorded
+    about the terminal — serial, name, IP and port, carried across verbatim.
+
+    Approved on creation, with the operator's name on it, for the same reason
+    ``POST /devices`` is: trust is withheld from serials the *server*
+    discovers on its own, because /iclock/* is reachable from the internet and
+    a stranger's terminal must not be able to enrol itself. A named admin
+    uploading a backup and choosing which terminal in it to restore is not
+    that — it is the same deliberate act as typing the serial in, and it is
+    audited as one.
+
+    The timezone is seeded from ``DEFAULT_DEVICE_TIMEZONE``, exactly as it is
+    for a device created by either other route. It is not read from the file:
+    ZKTime stores wall-clock digits with no zone (see ``_parse_time``), so the
+    file has no timezone to offer. The caller is told the device was created
+    and which zone it got, because that label is what the restored punches
+    will be read under and correcting it later is a deliberate act with its
+    own endpoint.
+    """
+    terminal = next(
+        (t for t in list_terminals(conn) if t["serial"] == device_sn), None
+    )
+    if terminal is None:
+        known = [t["serial"] for t in list_terminals(conn) if t["serial"]]
+        raise ZKTimeBackupError(
+            f"No device with serial {device_sn!r} is registered here, and this "
+            "backup holds no terminal with that serial either, so there is "
+            "nothing to create it from. "
+            + (f"The file's terminal(s): {', '.join(known)}."
+               if known else "The file names no terminal serial at all.")
+        )
+
+    device = Device(
+        serial_number=device_sn,
+        # ZKTime's own record of the terminal. The IP is very likely still
+        # right — it is a LAN address the site assigned — and where it is not,
+        # it is a starting point the operator can correct, which an empty
+        # field is not.
+        ip_address=terminal["ip_address"] or "",
+        port=_int(terminal.get("port"), 0) or 4370,
+        name=terminal["name"] or None,
+        status="approved",
+        approved_at=datetime.now(timezone.utc),
+        approved_by=created_by,
+        timezone=config.DEFAULT_DEVICE_TIMEZONE,
+    )
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+    log.info(
+        "zktime restore: registered device %s (%s) from the backup file",
+        device_sn, terminal["name"] or "unnamed",
+    )
+    return device
+
+
 def restore(db: Session, conn: sqlite3.Connection, *, device_sn: str,
-            terminal_id: int = None, parts=("employees", "attendance")) -> dict:
+            terminal_id: int = None, parts=("employees", "attendance"),
+            created_by: str = None) -> dict:
     """Put the file's people, punches and templates into this app's tables.
 
     ``parts`` names what to restore. Templates are not in the default: see
     ``_restore_templates`` for why that one is opt-in.
 
-    The device row must already exist and be the operator's own choice —
-    a restore never creates a device. A serial that is not registered here is
-    refused rather than invented, because the punches would otherwise land
-    under a device nothing else in the app knows about, attributed to a
-    timezone nobody chose.
+    The device is the operator's own choice. When that serial is not
+    registered here, it is created from the backup's own ``att_terminal`` row
+    rather than refused — see ``adopt_terminal``, which is also where the
+    limits on that are. A serial belonging to neither is still an error: the
+    punches would otherwise land under a device nothing in the app knows
+    about, attributed to a timezone nobody chose.
     """
-    device_sn = str(device_sn or "").strip()
-    device = db.query(Device).filter_by(serial_number=device_sn).first()
-    if device is None:
-        raise ZKTimeBackupError(
-            f"No device with serial {device_sn!r} is registered here. Add and "
-            "approve the device first, so its timezone and settings are the "
-            "ones you chose — a restore will not invent one."
-        )
-
+    # Before the device is resolved, because resolving it can now *create*
+    # one: a typo in `parts` must not leave a registered device behind.
     unknown = [part for part in parts if part not in PARTS]
     if unknown:
         raise ZKTimeBackupError(f"Unknown restore part(s): {', '.join(unknown)}")
 
-    summary = {"device_sn": device_sn, "terminal_id": terminal_id, "parts": list(parts)}
+    device_sn = str(device_sn or "").strip()
+    device = db.query(Device).filter_by(serial_number=device_sn).first()
+    device_created = device is None
+    if device_created:
+        device = adopt_terminal(db, conn, device_sn, created_by)
+
+    summary = {"device_sn": device_sn, "terminal_id": terminal_id,
+               "parts": list(parts), "device_created": device_created,
+               "device_timezone": device.timezone}
 
     # Order matters and is not the caller's to choose: people before punches,
     # so a punch restored in the same run is never hidden by `roster_only` for
@@ -419,7 +499,10 @@ def restore(db: Session, conn: sqlite3.Connection, *, device_sn: str,
     if "templates" in parts:
         summary["templates"] = _restore_templates(db, conn, device_sn=device_sn)
 
-    summary["warnings"], summary["notes"] = _warnings(db, conn, parts, terminal_id)
+    summary["warnings"], summary["notes"] = _warnings(
+        db, conn, parts, terminal_id,
+        created_device=device if device_created else None,
+    )
     return summary
 
 
@@ -655,7 +738,8 @@ def _restore_templates(db: Session, conn: sqlite3.Connection, *, device_sn: str)
     return {"stored": stored, "skipped": skipped}
 
 
-def _warnings(db: Session, conn: sqlite3.Connection, parts, terminal_id) -> tuple:
+def _warnings(db: Session, conn: sqlite3.Connection, parts, terminal_id,
+              created_device=None) -> tuple:
     """Everything worth saying about a finished restore, in two piles.
 
     ``warnings`` is what will bite. The first of them is the one that actually
@@ -669,6 +753,22 @@ def _warnings(db: Session, conn: sqlite3.Connection, parts, terminal_id) -> tupl
     ``zktime_export._warnings``.
     """
     warnings, notes = [], []
+
+    if created_device is not None:
+        # A warning, not a note. The timezone was chosen by a default, and it
+        # is the label every punch in this restore was just filed under — an
+        # operator who reads this now fixes it with one call, while one who
+        # finds out in three months does it with a year of history in the way.
+        warnings.append(
+            f"Device {created_device.serial_number} was not registered here, "
+            "so it was created from this file and approved in your name "
+            f"(name: {created_device.name or 'unnamed'}, IP: "
+            f"{created_device.ip_address or 'unknown'}). Its timezone is the "
+            f"default, {created_device.timezone} — the restored punches are "
+            "labelled with it. If that is the wrong zone, change it on the "
+            "device's page: that relabels these punches too, without moving "
+            "any of their digits."
+        )
 
     if "attendance" in parts and "employees" not in parts:
         pins = {pin for pin in _pin_by_row_id(conn).values() if is_person_pin(pin)}

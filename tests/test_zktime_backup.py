@@ -24,7 +24,7 @@ from sqlalchemy.pool import StaticPool
 from app import config
 from app.database import Base, get_db
 from app.deps import require_admin, require_auth
-from app.models import AttendanceLog, BiometricTemplate, Device, Employee, User
+from app.models import AttendanceLog, AuditLog, BiometricTemplate, Device, Employee, User
 from app.routers import backup as backup_router
 from app.models import FingerprintTemplate
 from app.services import zktime_backup, zktime_export
@@ -136,14 +136,17 @@ def build_backup(path, *, punches=_PUNCHES, people=_PEOPLE, templates=_TEMPLATES
         "emp_privilege, emp_cardNumber, emp_active) VALUES (?,?,?,?,?,?,?)", people
     )
     if terminals is None:
+        # terminal_port is 4370 on both, as it is in the operator's file. The
+        # second is left at 0 nowhere — a file that never used TCP is covered
+        # by TerminalAdoptionTests instead, where the fallback is the point.
         terminals = [
-            (1, 1, 1, "WTS Access Control", 1, "192.168.79.10", 0, SN, 92029),
-            (2, 2, 1, "Back Gate", 1, "192.168.79.11", 0, OTHER_SN, 12),
+            (1, 1, 1, "WTS Access Control", 1, "192.168.79.10", 4370, 0, SN, 92029),
+            (2, 2, 1, "Back Gate", 1, "192.168.79.11", 4370, 0, OTHER_SN, 12),
         ]
     conn.executemany(
         "INSERT INTO att_terminal (id, terminal_no, terminal_status, terminal_name, "
-        "terminal_category, terminal_tcpip, terminal_sn, terminal_sns, terminal_punches) "
-        "VALUES (?,?,?,?,?,?,?,?,?)", terminals
+        "terminal_category, terminal_tcpip, terminal_port, terminal_sn, terminal_sns, "
+        "terminal_punches) VALUES (?,?,?,?,?,?,?,?,?,?)", terminals
     )
     conn.executemany(
         "INSERT INTO att_punches (id, employee_id, punch_time, workcode, workstate, "
@@ -438,20 +441,112 @@ class AttendanceRestoreTests(BackupTestCase):
         self.assertEqual(summary["attendance"]["unreadable_time"], 1)
         self.assertEqual(db.query(AttendanceLog).count(), 0)
 
-    def test_an_unregistered_device_is_refused_rather_than_created(self):
-        db = self.Session()
-        self.addCleanup(db.close)
-        with self.assertRaises(ZKTimeBackupError) as caught:
-            self.restore(db, device_sn="NEVERSEEN", parts=("attendance",))
-        self.assertIn("NEVERSEEN", str(caught.exception))
-        self.assertEqual(db.query(Device).count(), 1)
-
     def test_derived_attendance_is_not_imported(self):
         """att_day_summary is ZKTime's arithmetic, not punches."""
         db = self.Session()
         self.addCleanup(db.close)
         self.restore(db, parts=("attendance",), terminal_id=None)
         self.assertEqual(db.query(AttendanceLog).count(), 5)
+
+
+class TerminalAdoptionTests(BackupTestCase):
+    """Restoring onto a terminal this app has no ``devices`` row for.
+
+    The offline-terminal case, and a common one: a machine that was never
+    pointed at this server has never announced itself, so the only record of
+    it anywhere is inside the backup being restored.
+    """
+
+    def test_a_serial_in_neither_the_app_nor_the_file_is_refused(self):
+        """The limit on adopting a terminal: it must be one the file names."""
+        db = self.Session()
+        self.addCleanup(db.close)
+        with self.assertRaises(ZKTimeBackupError) as caught:
+            self.restore(db, device_sn="NEVERSEEN", parts=("attendance",))
+        self.assertIn("NEVERSEEN", str(caught.exception))
+        # And it says what the file does hold, so the operator can pick.
+        self.assertIn(SN, str(caught.exception))
+        self.assertEqual(db.query(Device).count(), 1)
+
+    def test_a_terminal_in_the_file_is_registered_from_the_file(self):
+        """The offline-terminal case: no device row, and no way to go and read
+        the serial off the machine, so it comes out of the backup."""
+        db = self.Session()
+        self.addCleanup(db.close)
+        db.query(Device).delete()
+        db.commit()
+
+        summary = self.restore(db, parts=("attendance",), created_by="tester")
+
+        self.assertTrue(summary["device_created"])
+        device = db.query(Device).filter_by(serial_number=SN).one()
+        self.assertEqual(device.name, "WTS Access Control")
+        self.assertEqual(device.ip_address, "192.168.79.10")
+        self.assertEqual(device.port, 4370)
+        # Approved, for the same reason POST /devices approves what an admin
+        # types in: a named operator choosing this terminal is the approval.
+        self.assertEqual(device.status, "approved")
+        self.assertEqual(device.approved_by, "tester")
+        self.assertIsNotNone(device.approved_at)
+        self.assertEqual(device.timezone, config.DEFAULT_DEVICE_TIMEZONE)
+        # And the punches actually landed on it.
+        self.assertTrue(db.query(AttendanceLog).filter_by(device_sn=SN).count())
+
+    def test_registering_from_the_file_is_said_out_loud(self):
+        db = self.Session()
+        self.addCleanup(db.close)
+        db.query(Device).delete()
+        db.commit()
+
+        summary = self.restore(db, parts=("attendance",), created_by="tester")
+
+        self.assertEqual(summary["device_timezone"], config.DEFAULT_DEVICE_TIMEZONE)
+        spoken = " ".join(summary["warnings"])
+        self.assertIn(SN, spoken)
+        # The timezone is the one that matters: it labels every restored punch.
+        self.assertIn(config.DEFAULT_DEVICE_TIMEZONE, spoken)
+
+    def test_an_already_registered_device_is_left_exactly_as_it_was(self):
+        db = self.Session()
+        self.addCleanup(db.close)
+
+        summary = self.restore(db, parts=("attendance",), created_by="tester")
+
+        self.assertFalse(summary["device_created"])
+        device = db.query(Device).filter_by(serial_number=SN).one()
+        # The operator's own timezone, not the default, and no re-approval.
+        self.assertEqual(device.timezone, "Asia/Ho_Chi_Minh")
+        self.assertIsNone(device.approved_by)
+        self.assertEqual(db.query(Device).count(), 1)
+
+    def test_a_file_that_records_no_port_falls_back_to_the_sdk_default(self):
+        """0 is what ZKTime stores for a terminal it never reached over TCP,
+        and 0 is not a port this app can ever connect to."""
+        db = self.Session()
+        self.addCleanup(db.close)
+        db.query(Device).delete()
+        db.commit()
+
+        self.path = build_backup(
+            os.path.join(self.tmp.name, "noport.db"),
+            terminals=[(1, 1, 1, "WTS Access Control", 1, "192.168.79.10",
+                        0, 0, SN, 92029)],
+        )
+        self.restore(db, parts=("attendance",), created_by="tester")
+
+        self.assertEqual(db.query(Device).filter_by(serial_number=SN).one().port, 4370)
+
+    def test_a_bad_part_name_does_not_leave_a_device_behind(self):
+        """Validation runs before the device is resolved, now that resolving
+        it can create one."""
+        db = self.Session()
+        self.addCleanup(db.close)
+        db.query(Device).delete()
+        db.commit()
+
+        with self.assertRaises(ZKTimeBackupError):
+            self.restore(db, parts=("attendance", "payroll"))
+        self.assertEqual(db.query(Device).count(), 0)
 
 
 class TemplateRestoreTests(BackupTestCase):
@@ -663,13 +758,65 @@ class RouterTests(BackupTestCase):
             })
             self.assertIn(response.status_code, (400, 422), token)
 
-    def test_restoring_onto_an_unregistered_device_is_a_400_not_a_500(self):
+    def test_a_serial_in_neither_the_app_nor_the_file_is_a_400_not_a_500(self):
         token = self.upload().json()["token"]
         response = self.client.post("/backup/restore", json={
             "token": token, "device_sn": "NEVERSEEN",
         })
         self.assertEqual(response.status_code, 400)
         self.assertIn("NEVERSEEN", response.json()["detail"])
+
+    def test_restoring_onto_a_terminal_this_app_has_never_seen_registers_it(self):
+        db = self.Session()
+        self.addCleanup(db.close)
+        db.query(Device).delete()
+        db.commit()
+
+        token = self.upload().json()["token"]
+        response = self.client.post("/backup/restore", json={
+            "token": token, "device_sn": SN, "terminal_id": 1,
+        })
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["device_created"])
+        self.assertEqual(db.query(Device).filter_by(serial_number=SN).count(), 1)
+
+    def test_the_upload_marks_a_terminal_the_app_has_never_seen(self):
+        """What the picker needs to offer it as "will be added"."""
+        db = self.Session()
+        self.addCleanup(db.close)
+        db.query(Device).delete()
+        db.commit()
+
+        terminal = next(t for t in self.upload().json()["preview"]["terminals"]
+                        if t["serial"] == SN)
+        self.assertFalse(terminal["registered_here"])
+        # The fields a device is built from come across in the preview too.
+        self.assertEqual(terminal["ip_address"], "192.168.79.10")
+        self.assertEqual(terminal["port"], 4370)
+
+    def test_a_device_created_by_a_restore_is_audited_as_a_device_create(self):
+        """Found on the roster whichever route registered it."""
+        db = self.Session()
+        self.addCleanup(db.close)
+        db.query(Device).delete()
+        db.commit()
+
+        token = self.upload().json()["token"]
+        self.client.post("/backup/restore", json={"token": token, "device_sn": SN})
+
+        rows = db.query(AuditLog).filter_by(action="device_create").all()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].target, SN)
+        self.assertEqual(rows[0].actor, "tester")
+
+    def test_no_device_create_is_audited_when_the_device_was_already_there(self):
+        token = self.upload().json()["token"]
+        self.client.post("/backup/restore", json={"token": token, "device_sn": SN})
+
+        db = self.Session()
+        self.addCleanup(db.close)
+        self.assertEqual(db.query(AuditLog).filter_by(action="device_create").count(), 0)
 
     def test_selecting_nothing_to_restore_is_refused(self):
         token = self.upload().json()["token"]

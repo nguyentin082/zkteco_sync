@@ -156,7 +156,21 @@ class AttendanceLog(Base):
     timestamp = Column(DateTime, nullable=False, index=True)
     status = Column(Integer, nullable=False)   # 0=check-in 1=check-out 4=OT-in 5=OT-out
     punch = Column(Integer, default=0)          # verify mode: 1=finger 3=password 4=card 15=face
-    source = Column(Enum("adms_push", "sdk_pull", name="attendance_source"), nullable=False)
+    # Provenance of the row. "zktime_restore" is the third and, unlike the
+    # other two, does not describe a device reporting to this server at all:
+    # it marks a punch lifted out of a ZKTime .NET backup file (F1). It is
+    # kept distinct rather than folded into "sdk_pull" because the two differ
+    # in exactly the way an operator needs to see — a pulled row was read off
+    # the terminal by this app, a restored row was taken on trust from a file
+    # somebody uploaded, and only the second can be re-imported wrongly.
+    #
+    # Widening an enum is a *retype*, which app/migrations.py otherwise never
+    # does; see _widen_attendance_source there for why this one is safe and
+    # how it is applied.
+    source = Column(
+        Enum("adms_push", "sdk_pull", "zktime_restore", name="attendance_source"),
+        nullable=False,
+    )
     created_at = Column(DateTime, default=_now)
 
     # Provenance for rows that arrived as Security-protocol `rtlog` records.

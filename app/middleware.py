@@ -72,20 +72,38 @@ class MaxBodySizeMiddleware:
     caught chunk by chunk before it reaches a route handler.
     """
 
-    def __init__(self, app: ASGIApp, max_bytes: int):
+    def __init__(self, app: ASGIApp, max_bytes: int, overrides: dict = None):
         self.app = app
         self.max_bytes = max_bytes
+        # {path prefix: its own ceiling}. One route legitimately takes a body
+        # far larger than anything else here — a ZKTime backup is a whole
+        # SQLite database — and the choice is between raising the global limit
+        # for every route or naming the exception. Naming it keeps the default
+        # tight: a prefix not listed here is still held to `max_bytes`.
+        #
+        # Longest prefix wins, so a narrower rule can sit inside a broader one
+        # without depending on dict order.
+        self.overrides = dict(overrides or {})
+
+    def _limit_for(self, path: str) -> int:
+        best = None
+        for prefix, limit in self.overrides.items():
+            if path.startswith(prefix) and (best is None or len(prefix) > len(best)):
+                best = prefix
+        return self.overrides[best] if best is not None else self.max_bytes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
+        limit = self._limit_for(scope.get("path") or "")
+
         headers = dict(scope.get("headers") or [])
         declared = headers.get(b"content-length")
         if declared is not None:
             try:
-                if int(declared) > self.max_bytes:
+                if int(declared) > limit:
                     await self._reject(send)
                     return
             except ValueError:
@@ -99,7 +117,7 @@ class MaxBodySizeMiddleware:
             message = await receive()
             if message["type"] == "http.request":
                 total += len(message.get("body") or b"")
-                if total > self.max_bytes:
+                if total > limit:
                     raise _BodyTooLarge()
             return message
 

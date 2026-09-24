@@ -8,7 +8,9 @@ anything missing.
 
 Rules this module holds to, because it runs unattended on operator databases:
 
-* additive only — never drops, never retypes, never renames;
+* additive only — never drops, never renames, and never retypes except to
+  widen an enum so that it accepts one more value (``widen_attendance_source``
+  is the only such case, and carries its own justification);
 * safe to repeat — a second run is a no-op;
 * never adds NOT NULL without a default, since existing rows must get a value;
 * dialect-portable across MariaDB, MySQL, PostgreSQL and MSSQL by asking the
@@ -40,6 +42,7 @@ def run_migrations(engine) -> None:
     """Single entry point, called from the app lifespan right after create_all."""
     added = _add_missing_columns(engine)
     _add_missing_indexes(engine)
+    widen_attendance_source(engine)
     _run_data_fixups(engine, added)
 
 
@@ -179,6 +182,160 @@ def _run_data_fixups(engine, added: set) -> None:
     """
     _approve_pre_existing_devices(engine, added)
     _stamp_timezone_provenance(engine, added)
+
+
+# ---------------------------------------------------------------------------
+# Enum widening — the one documented exception to "never retypes"
+# ---------------------------------------------------------------------------
+
+# The value F1's restore writes into attendance_logs.source, and the full set
+# the column must accept once it exists. Kept here rather than imported from
+# models so this migration states plainly what it intends the column to hold.
+_ATTENDANCE_SOURCES = ("adms_push", "sdk_pull", "zktime_restore")
+_NEW_ATTENDANCE_SOURCE = "zktime_restore"
+
+
+def widen_attendance_source(engine) -> bool:
+    """Teach ``attendance_logs.source`` the third value. Returns True if it acted.
+
+    This module's contract says it never retypes a column, and that rule is
+    what makes it safe to run unattended. This function is the one exception,
+    and it earns it on three counts:
+
+    * it only ever *adds* an accepted value — no existing row can stop being
+      valid, so it cannot fail half-way and leave rows the column rejects;
+    * nothing in the app reads or branches on ``source`` (it is written in
+      three places and displayed nowhere), so no code path changes meaning;
+    * without it, F1's restore inserts rows the column refuses, and the
+      operator gets a database error instead of their attendance back.
+
+    It is keyed on the column's *actual* contents rather than on ``added``,
+    because the column has existed since the table did — there is no "the boot
+    that introduced it" to hang a fixup on. Detection is what makes it
+    idempotent: once the value is there, this is a no-op forever.
+
+    A failure here is logged and swallowed. A server that will not boot is
+    strictly worse than one where a restore reports a clear error, and the
+    operator can always run the one ALTER by hand.
+    """
+    dialect = engine.dialect.name
+
+    if "attendance_logs" not in set(inspect(engine).get_table_names()):
+        return False        # fresh install; create_all builds it complete
+
+    try:
+        if dialect in ("mysql", "mariadb"):
+            return _widen_enum_mysql(engine)
+        if dialect == "postgresql":
+            return _widen_enum_postgresql(engine)
+        if dialect == "mssql":
+            return _widen_check_mssql(engine)
+        # SQLite renders an Enum as VARCHAR + CHECK and cannot alter either in
+        # place. Every SQLite database this app touches is built fresh by
+        # create_all (the test suite), so it is already complete and there is
+        # genuinely nothing to do — not a gap being skipped over.
+        return False
+    except Exception as exc:
+        log.error(
+            "migration: could not widen attendance_logs.source to accept '%s' "
+            "(%s). Restoring a ZKTime backup will fail until this column "
+            "accepts the value; the fix is one ALTER TABLE by hand. Boot "
+            "continues — nothing else depends on it.",
+            _NEW_ATTENDANCE_SOURCE, exc,
+        )
+        return False
+
+
+def _reflected_enum_values(engine) -> set:
+    """The values the live column accepts, as the dialect reports them."""
+    for column in inspect(engine).get_columns("attendance_logs"):
+        if column["name"] == "source":
+            return set(getattr(column["type"], "enums", None) or ())
+    return set()
+
+
+def _widen_enum_mysql(engine) -> bool:
+    present = _reflected_enum_values(engine)
+    # An empty set means the column is not an ENUM at all (someone changed it
+    # to VARCHAR). That already accepts any string, so there is nothing to fix
+    # and nothing to break by leaving it alone.
+    if not present or _NEW_ATTENDANCE_SOURCE in present:
+        return False
+
+    # Union, not replacement: a column that somehow carries a value this
+    # version has never heard of keeps accepting it, so no stored row is
+    # orphaned by the ALTER.
+    values = sorted(present | set(_ATTENDANCE_SOURCES))
+    spelled = ", ".join("'" + v.replace("'", "''") + "'" for v in values)
+    with engine.begin() as conn:
+        conn.execute(text(
+            f"ALTER TABLE attendance_logs MODIFY source ENUM({spelled}) NOT NULL"
+        ))
+    log.warning(
+        "migration: attendance_logs.source widened to (%s) — ZKTime backup "
+        "restore can now record its own provenance", spelled,
+    )
+    return True
+
+
+def _widen_enum_postgresql(engine) -> bool:
+    present = _reflected_enum_values(engine)
+    if not present or _NEW_ATTENDANCE_SOURCE in present:
+        return False
+
+    # ALTER TYPE ... ADD VALUE cannot run inside a transaction block on
+    # PostgreSQL before 12, and psycopg2 opens one for every connection. An
+    # AUTOCOMMIT connection is the portable way to issue it on all versions.
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        conn.execute(text(
+            f"ALTER TYPE attendance_source ADD VALUE IF NOT EXISTS "
+            f"'{_NEW_ATTENDANCE_SOURCE}'"
+        ))
+    log.warning(
+        "migration: attendance_source gained the value '%s'",
+        _NEW_ATTENDANCE_SOURCE,
+    )
+    return True
+
+
+def _widen_check_mssql(engine) -> bool:
+    """MSSQL spells an Enum as VARCHAR plus a CHECK constraint.
+
+    So the widening is a constraint swap, not a type change, and the column
+    itself is never touched. The constraint is looked up by what it guards
+    rather than by name: SQLAlchemy generates the name, and an install created
+    by an older version may carry a different one.
+    """
+    find = text(
+        "SELECT cc.name, cc.definition FROM sys.check_constraints cc "
+        "JOIN sys.columns c ON c.object_id = cc.parent_object_id "
+        "                  AND c.column_id = cc.parent_column_id "
+        "WHERE cc.parent_object_id = OBJECT_ID('attendance_logs') "
+        "  AND c.name = 'source'"
+    )
+    with engine.begin() as conn:
+        rows = conn.execute(find).fetchall()
+        # No constraint means the column is a bare VARCHAR, which already
+        # accepts the new value.
+        if not rows:
+            return False
+        if all(_NEW_ATTENDANCE_SOURCE in (row[1] or "") for row in rows):
+            return False
+
+        spelled = ", ".join(f"'{v}'" for v in _ATTENDANCE_SOURCES)
+        for name, _definition in rows:
+            conn.execute(text(
+                f"ALTER TABLE attendance_logs DROP CONSTRAINT [{name}]"
+            ))
+        conn.execute(text(
+            "ALTER TABLE attendance_logs ADD CONSTRAINT ck_attendance_source "
+            f"CHECK (source IN ({spelled}))"
+        ))
+    log.warning(
+        "migration: attendance_logs.source CHECK constraint widened to (%s)",
+        spelled,
+    )
+    return True
 
 
 def _approve_pre_existing_devices(engine, added: set) -> None:

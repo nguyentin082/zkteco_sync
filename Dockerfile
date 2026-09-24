@@ -80,6 +80,13 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --no-create-home --shell /usr/sbin/nologin app
 
+# The one directory the app writes to: the ZKTime backup an export is built
+# on (BACKUP_DATA_DIR). Created here, owned by `app`, so that the named volume
+# compose mounts over it inherits that ownership — Docker copies the image
+# path's owner when it initialises an empty volume, and without this the app
+# user cannot write into a root-owned mount and Backup fails at the click.
+RUN mkdir -p /var/lib/zkteco-sync && chown app /var/lib/zkteco-sync
+
 WORKDIR /app
 COPY --from=deps-glibc /opt/venv /opt/venv
 COPY app/ ./app/
@@ -102,9 +109,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH="/opt/venv/bin:$PATH" \
     # what the *host* exposes via the ports: mapping (127.0.0.1 by default).
     APP_HOST=0.0.0.0 APP_PORT=8000
 
-# Unprivileged user. Nothing here needs to write to the image, so the files
-# stay root-owned and world-readable — no chown layer.
+# Unprivileged user. Nothing in /app needs to be written, so those files stay
+# root-owned and world-readable — no chown layer.
 RUN adduser -S -D -H -s /sbin/nologin app
+
+# The one directory the app writes to: the ZKTime backup an export is built
+# on (BACKUP_DATA_DIR). Created here, owned by `app`, so that the named volume
+# compose mounts over it inherits that ownership — Docker copies the image
+# path's owner when it initialises an empty volume, and without this the app
+# user cannot write into a root-owned mount and Backup fails at the click.
+RUN mkdir -p /var/lib/zkteco-sync && chown app /var/lib/zkteco-sync
 
 WORKDIR /app
 COPY --from=deps /opt/venv /opt/venv

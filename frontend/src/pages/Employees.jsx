@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import RevocationCard from '../components/RevocationCard'
@@ -349,6 +349,34 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
   useEffect(() => {
     setSelectedFinger(null)
   }, [employee?.user_id])
+
+  // The hands diagram draws a finger as enrolled whichever of the two template
+  // tables it landed in. `fingerprint_templates` is the SDK's, keyed on
+  // `finger_id`; `biometric_templates` is the one PUSH's `biodata` upload and a
+  // ZKTime restore write to, where a fingerprint is `type=1` and `no` carries
+  // that same finger index. Reading only the first meant a restored backup put
+  // dozens of templates in the database and still drew ten blank fingers —
+  // which reads as a restore that did nothing.
+  //
+  // `origin` rides along because it decides what the card underneath may
+  // offer. Delete is the SDK's per-finger command and can only act on an SDK
+  // row; a `biodata` finger has no equivalent, so it is shown and not offered.
+  const fingersReady = templates !== null && biometrics !== null
+  const fingers = useMemo(() => {
+    const byFinger = new Map()
+    // Fingerprints only, and only where `no` is actually a finger index: a
+    // visible-light face arrives as `type=9, no=0` and is not a left little.
+    for (const t of biometrics || []) {
+      if (t.type !== 1 || t.no < 0 || t.no > 9) continue
+      byFinger.set(t.no, { ...t, finger_id: t.no, origin: 'biodata' })
+    }
+    // Second, so that when both tables hold the same finger the SDK row is the
+    // one shown — it is the only one Delete can act on.
+    for (const t of templates || []) {
+      byFinger.set(t.finger_id, { ...t, origin: 'sdk' })
+    }
+    return [...byFinger.values()]
+  }, [templates, biometrics])
 
   if (!employee) {
     return (
@@ -1017,19 +1045,19 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
       <Section
         title="Fingerprint Templates"
         action={
-          templates && (
+          fingersReady && (
             <span className="text-xs text-gray-400">
-              {templates.length} of 10 fingers
+              {fingers.length} of 10 fingers
             </span>
           )
         }
       >
-        {templates === null ? (
+        {!fingersReady ? (
           <p className="text-sm text-gray-400">Loading…</p>
         ) : (
           <>
             <HandsDiagram
-              templates={templates}
+              templates={fingers}
               selected={selectedFinger}
               onSelect={(fid) => setSelectedFinger(fid === selectedFinger ? null : fid)}
             />
@@ -1050,7 +1078,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                 Click a finger to see its template, delete it, or enrol it.
               </p>
             ) : (() => {
-              const stored = templates.find((t) => t.finger_id === selectedFinger)
+              const stored = fingers.find((t) => t.finger_id === selectedFinger)
               const sourceName = stored && (
                 allDevices.find((x) => x.serial_number === stored.source_device_sn)?.name ||
                 stored.source_device_sn
@@ -1058,26 +1086,43 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
               return (
                 <div className="bg-gray-50 rounded-lg px-3 py-2.5 text-sm">
                   {stored ? (
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-gray-800 font-medium">{FINGER_NAMES[selectedFinger]}</p>
-                        <p className="text-xs text-gray-400 truncate">from {sourceName}</p>
+                    <>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-gray-800 font-medium">{FINGER_NAMES[selectedFinger]}</p>
+                          <p className="text-xs text-gray-400 truncate">from {sourceName}</p>
+                        </div>
+                        <span
+                          className={`text-xs px-1.5 py-0.5 rounded-full ${
+                            stored.valid ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
+                          }`}
+                        >
+                          {stored.valid ? 'Valid' : 'Invalid'}
+                        </span>
+                        {/* Only an SDK template can be deleted one finger at a
+                            time — that is the only protocol with a command for
+                            it. Offering the button on a biodata row would send
+                            a delete for a template that table does not hold. */}
+                        {stored.origin === 'sdk' && (
+                          <button
+                            onClick={() => handleDeleteTemplate(selectedFinger)}
+                            disabled={busyTemplate[selectedFinger]}
+                            className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 disabled:opacity-40 transition-colors"
+                          >
+                            {busyTemplate[selectedFinger] ? '…' : 'Delete'}
+                          </button>
+                        )}
                       </div>
-                      <span
-                        className={`text-xs px-1.5 py-0.5 rounded-full ${
-                          stored.valid ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
-                        }`}
-                      >
-                        {stored.valid ? 'Valid' : 'Invalid'}
-                      </span>
-                      <button
-                        onClick={() => handleDeleteTemplate(selectedFinger)}
-                        disabled={busyTemplate[selectedFinger]}
-                        className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 disabled:opacity-40 transition-colors"
-                      >
-                        {busyTemplate[selectedFinger] ? '…' : 'Delete'}
-                      </button>
-                    </div>
+                      {stored.origin === 'biodata' && (
+                        <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">
+                          Held as a captured biometric (type {stored.type}, no{' '}
+                          {stored.no}) — uploaded by a terminal or restored from a
+                          ZKTime backup, and listed under Captured Biometrics. No
+                          command deletes a single one of those, so there is
+                          nothing to offer here.
+                        </p>
+                      )}
+                    </>
                   ) : (
                     <>
                       <p className="text-gray-800 font-medium">{FINGER_NAMES[selectedFinger]}</p>

@@ -8,9 +8,9 @@
 # database and the account inside MariaDB, and the whole file is handed to
 # the app. Set DB_HOST=db and DB_PORT=3306 to use that bundled database.
 #
-# Already have a database? Point DB_HOST/DB_PORT at it in .env (from inside
-# the container, this machine is `host.docker.internal`) and start only the
-# app:  docker compose up -d --build --no-deps app
+# Already have a database? Point DB_HOST_DOCKER/DB_PORT at it in .env (from
+# inside the container, this machine is `host.docker.internal`) and start only
+# the app:  docker compose up -d --build --no-deps app
 #
 # Full walkthrough, including TRUSTED_PROXIES under Docker: DEPLOY.md.
 name: zkteco-sync
@@ -31,6 +31,17 @@ services:
       # *host* exposes is narrowed by the ports: mapping below.
       APP_HOST: 0.0.0.0
       APP_PORT: "8000"
+      # Where the ZKTime backup template lives. Must point at the volume
+      # below: /app is root-owned and the app user cannot write to it, so the
+      # native default (<app>/data) would fail in a container.
+      BACKUP_DATA_DIR: /var/lib/zkteco-sync
+      # Same reason, for the other end of the socket. The bundled database is
+      # `db` on this network and 127.0.0.1 on the published port from the host,
+      # and .env has to carry the second so that a native `uvicorn` run works
+      # without a per-command override. Pointing this container at a database
+      # *outside* the project: set DB_HOST_DOCKER in .env, and leave DB_HOST
+      # for whatever the host-side process needs.
+      DB_HOST: ${DB_HOST_DOCKER:-db}
     ports:
       # Published on loopback only by default, mirroring the native install:
       # Apache on the host terminates TLS and proxies to 127.0.0.1:8000. For a
@@ -41,6 +52,13 @@ services:
       # subnet below that address is always 172.30.0.1 — put that in
       # TRUSTED_PROXIES (see DEPLOY.md).
       - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8000}:8000"
+    volumes:
+      # The ZKTime backup an export is built on. /app is root-owned and the
+      # app user cannot write there, so this is the one piece of state the
+      # container keeps on disk. Losing it is recoverable — Backup asks for a
+      # template again, and the next restore saves one — but a named volume
+      # means a restart does not cost the operator that upload.
+      - backupdata:/var/lib/zkteco-sync
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -60,6 +78,14 @@ services:
       # for a native install — change it).
       MARIADB_USER: ${DB_USER:?set DB_USER in .env (not root)}
       MARIADB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    ports:
+      # Loopback only, same rule as the app above. The app *in this project*
+      # reaches the database over the zk network by service name and does not
+      # need this — it is here for a native app process (uvicorn on the host,
+      # `python run.py`) pointed at DB_HOST=127.0.0.1, which cannot resolve
+      # `db`. Set DB_PUBLISH_PORT if this machine already has something on
+      # 3306; it changes the host side only, the container stays on 3306.
+      - "127.0.0.1:${DB_PUBLISH_PORT:-3306}:3306"
     volumes:
       - dbdata:/var/lib/mysql
     healthcheck:
@@ -82,3 +108,4 @@ networks:
 
 volumes:
   dbdata:
+  backupdata:

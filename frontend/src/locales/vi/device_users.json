@@ -1,6 +1,7 @@
 {
   "track_delivery": "Theo dõi việc gửi thực tế trong mục Lệnh.",
   "pushed_other": "Đã đẩy {{count}} người dùng lên {{device}}",
+  "unchanged_other": "{{count}} người dùng đã đúng trên thiết bị — không ghi lại",
   "title": "Người dùng trên thiết bị",
   "intro": "Chọn nhân viên để đẩy lên <b>{{device}}</b>. Những người được chọn sẵn là đã đăng ký.",
   "skipped": "Cố ý bỏ qua — không đẩy",

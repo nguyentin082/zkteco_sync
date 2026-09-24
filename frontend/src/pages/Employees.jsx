@@ -475,6 +475,8 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
       // afterwards; claiming success here would be a guess.
       if (result?.status === 'queued') {
         showToast(serverMessage(result, t('employees.queued_for', { sn: pushDeviceSn })))
+      } else if (result?.status === 'unchanged') {
+        showToast(t('employees.unchanged_on', { sn: pushDeviceSn }))
       } else {
         showToast(t('employees.written_to', { sn: pushDeviceSn }))
       }

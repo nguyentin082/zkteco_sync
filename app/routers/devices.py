@@ -64,7 +64,7 @@ from app.services.poller import (
     record_pull_outcome,
     store_templates,
 )
-from app.services.sdk import device_connection, enroll_user_task
+from app.services.sdk import device_connection, enroll_user_task, write_user
 from app.errors import AppError, fragment, message
 
 router = APIRouter(
@@ -1520,6 +1520,7 @@ def push_users_bulk(
     """
     device = _get_device_or_404(sn, db)
     pushed = []
+    unchanged = []
     errors = []
 
     if _uses_command_queue(device):
@@ -1570,19 +1571,11 @@ def push_users_bulk(
                     errors.append(f"{user_id}: employee not found in DB")
                     continue
                 try:
-                    existing = uid_by_user.get(str(user_id))
-                    uid = existing.uid if existing else None
-                    pre_uid = conn.next_uid
-                    conn.set_user(
-                        uid=uid,
-                        name=emp.name,
-                        privilege=emp.privilege,
-                        user_id=emp.user_id,
-                        card=int(emp.card) if emp.card and emp.card != "0" else 0,
+                    actual_uid, written = write_user(
+                        conn, emp, uid_by_user.get(str(user_id))
                     )
-                    actual_uid = uid if uid is not None else pre_uid
                     employee_sync.link_device_employee(db, sn, user_id, uid=actual_uid)
-                    pushed.append(user_id)
+                    (pushed if written else unchanged).append(user_id)
                 except Exception as e:
                     errors.append(f"{user_id}: {e}")
 
@@ -1590,7 +1583,9 @@ def push_users_bulk(
     except (ZKErrorConnection, ZKNetworkError):
         raise AppError("device.connect_failed", status_code=503, detail="Could not connect to device")
 
-    return {"device_sn": sn, "pushed": pushed, "errors": errors}
+    # `unchanged` are people the device already held exactly as the DB has
+    # them: linked, but not rewritten (see sdk.write_user).
+    return {"device_sn": sn, "pushed": pushed, "unchanged": unchanged, "errors": errors}
 
 
 @router.post("/{sn}/users/{user_id}/push", dependencies=[Depends(require_admin)])
@@ -1649,18 +1644,7 @@ def push_user_to_device(
                 (u for u in users_on_device if u.user_id == str(user_id)), None
             )
 
-            uid = existing.uid if existing else None
-            pre_uid = conn.next_uid  # pyzk will assign this if uid is None
-
-            conn.set_user(
-                uid=uid,
-                name=emp.name,
-                privilege=emp.privilege,
-                user_id=emp.user_id,
-                card=int(emp.card) if emp.card and emp.card != "0" else 0,
-            )
-
-            actual_uid = uid if uid is not None else pre_uid
+            actual_uid, written = write_user(conn, emp, existing)
 
             # One writer for this table, shared with the SDK pull, the ADMS
             # upload ingest and the ADMS acknowledgement path (E1's rule).
@@ -1672,9 +1656,11 @@ def push_user_to_device(
             "user_id": user_id,
             "uid": actual_uid,
             "transport": "sdk",
-            "status": "written",
-            "message": "User written to device",
-            **message("user_written"),
+            # "unchanged": the device already held this exact record, so
+            # nothing was sent (see sdk.write_user).
+            "status": "written" if written else "unchanged",
+            "message": "User written to device" if written else "User already up to date on device",
+            **message("user_written" if written else "user_unchanged"),
         }
     except (ZKErrorConnection, ZKNetworkError):
         raise AppError("device.connect_failed", status_code=503, detail="Could not connect to device")

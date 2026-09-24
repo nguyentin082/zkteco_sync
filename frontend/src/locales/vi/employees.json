@@ -26,6 +26,7 @@
   "select_prompt": "Chọn một nhân viên để xem chi tiết",
   "queued_for": "Đã đưa vào hàng đợi cho {{sn}} — chưa được gửi",
   "written_to": "Đã ghi lên {{sn}}",
+  "unchanged_on": "{{sn}} đã có đúng thông tin này — không cần ghi lại",
   "revocation_queued": "Đã đưa lệnh thu hồi vào hàng đợi cho {{sn}} — CHƯA được xác nhận tại cửa",
   "push_withdrawn": "Đã rút lại lệnh đẩy chưa gửi tới {{sn}}",
   "removed_from": "Đã gỡ khỏi {{sn}} — thiết bị đã xác nhận",

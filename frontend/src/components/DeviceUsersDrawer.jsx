@@ -72,12 +72,22 @@ export default function DeviceUsersDrawer({ device, onClose, showToast }) {
       // "pushed" is already true, is told apart from it. Use the server's
       // own wording rather than re-deriving "queued" vs "pushed" here: it
       // already carries the honest command count and drain estimate.
-      if (result.pushed.length > 0) {
-        if (result.transport === 'adms_queue') {
+      if (result.transport === 'adms_queue') {
+        if (result.pushed.length > 0) {
           showToast(`${serverMessage(result)} ${t('device_users.track_delivery')}`)
-        } else {
-          showToast(t('device_users.pushed', { count: result.pushed.length, device: device.name || device.serial_number }))
         }
+      } else {
+        // SDK branch: people the device already held unchanged are reported
+        // apart from the ones actually written (see sdk.write_user).
+        const unchanged = result.unchanged || []
+        const parts = []
+        if (result.pushed.length > 0) {
+          parts.push(t('device_users.pushed', { count: result.pushed.length, device: device.name || device.serial_number }))
+        }
+        if (unchanged.length > 0) {
+          parts.push(t('device_users.unchanged', { count: unchanged.length }))
+        }
+        if (parts.length > 0) showToast(parts.join('. '))
       }
 
       if (skips.length === 0 && realErrors.length === 0) {

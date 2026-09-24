@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 
-from zk import ZK
+from zk import ZK, const
 from zk.exception import ZKErrorConnection, ZKErrorResponse, ZKNetworkError
 
 from app.database import SessionLocal
@@ -55,6 +55,48 @@ def device_connection(device: Device):
             conn.disconnect()
         except Exception:
             pass
+
+
+def write_user(conn, emp, existing):
+    """Write one employee's record to a connected `att` device.
+
+    Returns ``(uid, written)``. ``existing`` is that person's pyzk User from
+    this device's get_users(), or None when the device does not hold them.
+
+    Skips the write when the device already holds exactly what the DB says:
+    on slow firmware each write is two round trips (USER_WRQ + REFRESHDATA),
+    and a bulk push is mostly people who are already there.
+
+    set_user replaces the whole record, and the DB has no column for the
+    device-side password or group, so those are carried over from what the
+    device holds rather than blanked. Fingerprints are keyed by uid and are
+    untouched either way because the uid is reused.
+    """
+    # pyzk writes anything other than USER_DEFAULT/USER_ADMIN as USER_DEFAULT,
+    # so compare against what would actually land on the device.
+    privilege = emp.privilege if emp.privilege in (const.USER_DEFAULT, const.USER_ADMIN) else const.USER_DEFAULT
+    card = int(emp.card) if emp.card and emp.card != "0" else 0
+
+    if (
+        existing is not None
+        and existing.name == emp.name
+        and existing.privilege == privilege
+        and existing.card == card
+    ):
+        return existing.uid, False
+
+    uid = existing.uid if existing else None
+    pre_uid = conn.next_uid  # pyzk assigns this when uid is None
+    conn.set_user(
+        uid=uid,
+        name=emp.name,
+        privilege=privilege,
+        password=(existing.password if existing else "") or "",
+        group_id=(existing.group_id if existing else "") or "",
+        user_id=emp.user_id,
+        card=card,
+    )
+    return (uid if uid is not None else pre_uid), True
 
 
 def enroll_user_task(serial_number: str, user_id: str, finger_id: int) -> None:

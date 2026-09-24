@@ -35,6 +35,7 @@
   "bulk_queued": "Đã đưa {{commands}} lệnh vào hàng đợi cho {{people}} người. Mỗi lần kết nối nhận một lệnh nên mất khoảng {{seconds}} giây, và chưa có gì được gửi cho đến khi thiết bị nhận.",
   "push_queued": "Đã đưa {{count}} lệnh vào hàng đợi cho {{sn}}. Thiết bị sẽ nhận ở lần kết nối tới (khoảng 10 giây) rồi xác nhận — hiện chưa được gửi.",
   "user_written": "Đã ghi người dùng lên thiết bị",
+  "user_unchanged": "Thiết bị đã có đúng thông tin này — không cần ghi lại",
   "revoke_withdrawn": "Người này chưa từng được xác nhận trên {{sn}}; {{count}} lệnh đang chờ đưa họ lên đã được rút lại. Không có gì được gửi tới thiết bị.",
   "revoke_queued": "Đã thu hồi quyền trong hệ thống — CHƯA được xác nhận tại cửa. {{sn}} nhận mỗi lần một lệnh (khoảng 10 giây) rồi mới xác nhận; trước khi đó, người này vẫn mở được cửa. Nếu máy mất kết nối, lệnh thu hồi sẽ chờ và vẫn hiển thị là đang chờ.",
   "revoke_removed": "Đã gỡ khỏi {{sn}}. Thiết bị đã xác nhận.",

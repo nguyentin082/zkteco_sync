@@ -26,6 +26,7 @@
   "select_prompt": "Select an employee to view details",
   "queued_for": "Queued for {{sn}} — not delivered yet",
   "written_to": "Written to {{sn}}",
+  "unchanged_on": "Already up to date on {{sn}} — nothing was written",
   "revocation_queued": "Revocation queued for {{sn}} — NOT yet confirmed at the door",
   "push_withdrawn": "Undelivered push to {{sn}} withdrawn",
   "removed_from": "Removed from {{sn}} — the device confirmed it",

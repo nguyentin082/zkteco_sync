@@ -4620,12 +4620,77 @@ class TransportRoutingTests(ProvisioningTestCase):
 
         self.assertEqual(response.status_code, 200, response.text)
         body = response.json()
-        self.assertEqual(set(body.keys()), {"device_sn", "pushed", "errors"})
+        self.assertEqual(set(body.keys()), {"device_sn", "pushed", "unchanged", "errors"})
         self.assertEqual(body["pushed"], ["9001", "9002"])
+        self.assertEqual(body["unchanged"], [])
         self.assertEqual(len(body["errors"]), 1)
         self.assertIn("nobody", body["errors"][0])
         self.assertEqual(self.outbox(self.ATT_SN), [])
         self.assertEqual(len(conn.written), 2)
+
+    @staticmethod
+    def device_user(uid, user_id, name, card=0, privilege=0, password="", group_id=""):
+        from types import SimpleNamespace
+        return SimpleNamespace(uid=uid, user_id=user_id, name=name, card=card,
+                               privilege=privilege, password=password, group_id=group_id)
+
+    def test_a_person_already_on_the_device_unchanged_is_not_rewritten(self):
+        """Each SDK write is two round trips; slow firmware makes that ~15 s.
+        Someone the device already holds exactly as the DB has them is linked
+        but not written."""
+        from unittest import mock
+        conn = FakeConnection(
+            next_uid=50,
+            users=[self.device_user(7, "9001", "Aisha Rahman", card=778899)],
+        )
+        with mock.patch("app.routers.devices.device_connection", fake_sdk(conn)):
+            response = self.push(self.ATT_SN, "9001")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "unchanged")
+        self.assertEqual(response.json()["message_code"], "user_unchanged")
+        self.assertEqual(conn.written, [])
+        self.assertEqual([l.uid for l in self.links(self.ATT_SN)], [7])
+
+    def test_a_bulk_push_reports_unchanged_people_apart_from_written_ones(self):
+        self.create_employee("9002", name="Bilal Khan")
+        from unittest import mock
+        conn = FakeConnection(
+            next_uid=50,
+            users=[self.device_user(7, "9001", "Aisha Rahman", card=778899)],
+        )
+        with mock.patch("app.routers.devices.device_connection", fake_sdk(conn)):
+            response = self.client.post(
+                f"/devices/{self.ATT_SN}/users/push_bulk",
+                json={"user_ids": ["9001", "9002"]},
+            )
+
+        body = response.json()
+        self.assertEqual(body["pushed"], ["9002"])
+        self.assertEqual(body["unchanged"], ["9001"])
+        self.assertEqual([w["user_id"] for w in conn.written], ["9002"])
+        self.assertEqual(sorted(l.uid for l in self.links(self.ATT_SN)), [7, 50])
+
+    def test_rewriting_a_person_keeps_the_password_and_group_the_device_holds(self):
+        """set_user replaces the whole record and the DB has no password
+        column: without carrying it over, a name fix would silently wipe the
+        person's keypad password."""
+        from unittest import mock
+        conn = FakeConnection(
+            next_uid=50,
+            users=[self.device_user(7, "9001", "OLD NAME", card=778899,
+                                    password="1234", group_id="2")],
+        )
+        with mock.patch("app.routers.devices.device_connection", fake_sdk(conn)):
+            response = self.push(self.ATT_SN, "9001")
+
+        self.assertEqual(response.json()["status"], "written")
+        self.assertEqual(len(conn.written), 1)
+        written = conn.written[0]
+        self.assertEqual(written["uid"], 7)
+        self.assertEqual(written["name"], "Aisha Rahman")
+        self.assertEqual(written["password"], "1234")
+        self.assertEqual(written["group_id"], "2")
 
     def test_a_device_with_no_protocol_set_takes_the_sdk_path(self):
         """Predictable, and deliberately the loud direction: an SDK push to a

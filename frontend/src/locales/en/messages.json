@@ -35,6 +35,7 @@
   "bulk_queued": "Queued {{commands}} commands for {{people}} people. At one command per poll this takes roughly {{seconds}} seconds to drain, and nothing is delivered until the device collects it.",
   "push_queued": "Queued {{count}} commands for {{sn}}. The device collects them on its next poll (about 10 seconds) and acknowledges afterwards — this is not delivered yet.",
   "user_written": "User written to device",
+  "user_unchanged": "Already up to date on the device — nothing was written",
   "revoke_withdrawn": "This person was never confirmed on {{sn}}; the {{count}} command(s) still waiting to put them there have been withdrawn. Nothing was sent to the device.",
   "revoke_queued": "Access revoked in the system — NOT yet confirmed at the door. {{sn}} collects one command per poll (about 10 seconds) and confirms afterwards; until it does, this person can still open that door. If the terminal is offline the revocation waits, and stays visible as outstanding.",
   "revoke_removed": "Removed from {{sn}}. The device confirmed it.",

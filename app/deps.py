@@ -9,6 +9,7 @@ the X-CSRF-Token header, which script from another origin cannot read.
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, Request, status
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app import config
@@ -70,7 +71,13 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
 
     if (now - session.last_seen_at).total_seconds() >= _SLIDE_AFTER_SECONDS:
         session.last_seen_at = now
-        db.commit()
+        try:
+            db.commit()
+        except OperationalError:
+            # A parallel request from the same browser slid this row first
+            # (a lock wait or a snapshot conflict). The slide is best-effort
+            # and that request already did it, so this one must not fail.
+            db.rollback()
 
     request.state.session = session
     return user

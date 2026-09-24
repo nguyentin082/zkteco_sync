@@ -74,7 +74,17 @@ if _db_engine == "mssql":
 
     DB_URL = f"mssql+pyodbc:///?odbc_connect={quote_plus(';'.join(parts))}"
 
-engine = create_engine(DB_URL, pool_pre_ping=True)
+# MariaDB 11.6+ turns on innodb_snapshot_isolation by default, which under
+# InnoDB's REPEATABLE READ refuses an UPDATE to a row another transaction
+# changed after this one first read it (error 1020, "Record has changed since
+# last read"). Two parallel requests sliding the same session's last_seen_at
+# hit exactly that and one came back 500. READ COMMITTED is what PostgreSQL
+# and SQL Server already default to, and snapshot isolation does not apply.
+_engine_options = {"pool_pre_ping": True}
+if _db_engine in ("mariadb", "mysql"):
+    _engine_options["isolation_level"] = "READ COMMITTED"
+
+engine = create_engine(DB_URL, **_engine_options)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

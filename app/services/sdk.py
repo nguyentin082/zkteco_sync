@@ -40,7 +40,12 @@ def device_connection(device: Device):
             conn.get_users()
     """
     zk_instance = ZK(
-        device.ip_address, port=device.port, timeout=30, password=device.comm_key or 0, verbose=False
+        device.ip_address,
+        port=device.port,
+        timeout=30,
+        password=device.comm_key or 0,
+        force_udp=bool(device.force_udp),
+        verbose=False,
     )
     conn = _connect(zk_instance)
     try:
@@ -68,7 +73,12 @@ def enroll_user_task(serial_number: str, user_id: str, finger_id: int) -> None:
             return
 
         zk_instance = ZK(
-            device.ip_address, port=device.port, timeout=60, password=device.comm_key or 0, verbose=False
+            device.ip_address,
+            port=device.port,
+            timeout=60,
+            password=device.comm_key or 0,
+            force_udp=bool(device.force_udp),
+            verbose=False,
         )
         conn = None
         try:

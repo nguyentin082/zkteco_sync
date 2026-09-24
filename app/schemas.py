@@ -13,6 +13,8 @@ class DeviceCreate(BaseModel):
     # SDK comm key (D7) — write-only, see DeviceOut.comm_key_set. 0/omitted
     # means no key, matching pyzk's own default.
     comm_key: int = Field(default=0, ge=0)
+    # SDK over UDP rather than TCP (see Device.force_udp).
+    force_udp: bool = False
 
 
 class DeviceOut(BaseModel):
@@ -55,6 +57,8 @@ class DeviceOut(BaseModel):
     # secret and this is the only shape a device is allowed to leave the
     # server in; only whether one is set is observable.
     comm_key_set: bool = False
+    # SDK transport: True means UDP 4370, False the pyzk default of TCP.
+    force_udp: bool = False
     # How many people have been revoked from this device in the system and NOT
     # yet confirmed removed by the device itself (E8). Non-zero means somebody
     # can still open this door who is not supposed to be able to. It is on the
@@ -480,6 +484,8 @@ class DeviceUpdate(BaseModel):
     # SDK comm key (D7) — write-only. Omit to leave unchanged; send 0 to clear
     # it back to "no key".
     comm_key: Optional[int] = Field(default=None, ge=0)
+    # SDK over UDP rather than TCP (see Device.force_udp).
+    force_udp: Optional[bool] = None
     # `timezone` is deliberately absent, for the same reason `status` is.
     # Changing a device's zone relabels every attendance record it ever
     # pushed; that is a deliberate act with its own endpoint

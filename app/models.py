@@ -43,6 +43,13 @@ class Device(Base):
     # connecting exactly as before this column existed.
     comm_key = Column(Integer, nullable=False, default=0)
 
+    # Talk SDK over UDP 4370 instead of TCP. Some firmware (seen on a
+    # ZLM60_TFT, Ver 6.60) answers every TCP command 5-10 s late while
+    # answering the same command over UDP in ~10 ms, which turns one user
+    # push into a minute and a bulk push into a quarter of an hour. Off by
+    # default: other terminals are known to speak TCP only.
+    force_udp = Column(Boolean, nullable=False, default=False)
+
     # Which of ZKTeco's two PUSH protocol families this serial speaks. They
     # share the /iclock/* URL space but disagree on the handshake reply, so
     # the server has to know which one it is talking to. "att" is the default

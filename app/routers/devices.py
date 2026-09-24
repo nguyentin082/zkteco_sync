@@ -288,6 +288,10 @@ def update_device(
             detail="Add at least one allowed CIDR before enabling the IP check",
         )
 
+    # NOT NULL column: an explicit null means "leave it", like omitting it.
+    if fields.get("force_udp", False) is None:
+        del fields["force_udp"]
+
     for key, value in fields.items():
         setattr(device, key, value)
     db.commit()

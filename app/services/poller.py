@@ -21,6 +21,7 @@ def _connect(device):
         port=device.port,
         timeout=30,
         password=device.comm_key or 0,
+        force_udp=bool(device.force_udp),
         verbose=False,
     )
     try:

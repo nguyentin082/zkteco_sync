@@ -3,7 +3,8 @@ import { Trans, useTranslation } from 'react-i18next'
 import { api } from '../api'
 import Drawer from './Drawer'
 
-// Device-level security controls: source-IP pinning and the SDK comm key.
+// Device-level security controls: source-IP pinning, the SDK comm key, and
+// the SDK transport (TCP or UDP).
 // The IP allowlist is optional and off by default (some sites have dynamic
 // IPs); where a site does have a static address it is the only control that
 // stops someone who has learned the serial number from forging attendance
@@ -22,6 +23,25 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
   const [commKeyInput, setCommKeyInput] = useState('')
   const [commKeySaving, setCommKeySaving] = useState(false)
   const [commKeyError, setCommKeyError] = useState('')
+
+  const [forceUdp, setForceUdp] = useState(!!device.force_udp)
+  const [transportSaving, setTransportSaving] = useState(false)
+  const [transportError, setTransportError] = useState('')
+
+  async function saveTransport(value) {
+    setTransportError('')
+    setTransportSaving(true)
+    try {
+      const updated = await api.devices.update(device.serial_number, { force_udp: value })
+      setForceUdp(!!updated.force_udp)
+      showToast(updated.force_udp ? t('device_security.transport_saved_udp') : t('device_security.transport_saved_tcp'))
+      onSaved()
+    } catch (err) {
+      setTransportError(err.message)
+    } finally {
+      setTransportSaving(false)
+    }
+  }
 
   async function save(payload) {
     setError('')
@@ -139,6 +159,23 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
         )}
 
         {commKeyError && <p className="text-xs text-red-600 mt-1">{commKeyError}</p>}
+      </div>
+
+      <div className="mb-5 pb-5 border-b border-gray-100">
+        <label className="block text-sm font-medium text-gray-700 mb-1">{t('device_security.transport')}</label>
+        <p className="text-xs text-gray-400 mb-2">
+          {t('device_security.transport_help')}
+        </p>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={forceUdp}
+            disabled={transportSaving}
+            onChange={(e) => saveTransport(e.target.checked)}
+          />
+          {t('device_security.transport_udp')}
+        </label>
+        {transportError && <p className="text-xs text-red-600 mt-1">{transportError}</p>}
       </div>
 
       <p className="text-sm text-gray-500 mb-4">

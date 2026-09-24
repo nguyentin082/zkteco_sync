@@ -121,7 +121,7 @@ def _as_device_local(dt: datetime, zone: str) -> datetime:
 
 
 def _with_pending_revocations(db: Session, rows) -> list:
-    """Stamp DeviceOut.pending_revocations on each device (E8).
+    """Stamp DeviceOut.pending_revocations (E8) and .syncing on each device.
 
     One extra query for the whole listing, not one per device: the outbox is
     the hot table on every device poll and this is an operator page.
@@ -146,6 +146,7 @@ def _with_pending_revocations(db: Session, rows) -> list:
     for row in rows:
         shape = DeviceOut.model_validate(row)
         shape.pending_revocations = counts.get(row.serial_number, 0)
+        shape.syncing = poller.pulling_kinds(row.serial_number)
         out.append(shape)
     return out
 

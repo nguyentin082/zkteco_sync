@@ -5219,6 +5219,58 @@ class SdkAttendancePullDedupTests(AdmsTestCase):
         self.poller.pull_attendance(self.SN)
         self.assertIsInstance(self.outcomes()["attendance"]["seconds"], float)
 
+    def test_the_device_listing_reports_what_is_being_read_right_now(self):
+        """`syncing` comes from the server's own lock, so a reload, another
+        tab or another operator all see the device as busy."""
+        import threading
+        from app.routers.devices import _with_pending_revocations
+        started, release = threading.Event(), threading.Event()
+
+        class _SlowConn(self._FakeConn):
+            def get_attendance(inner):
+                started.set()
+                release.wait(5)
+                return super().get_attendance()
+        self.poller._connect = lambda device: _SlowConn(self.records)
+
+        def syncing():
+            db = self.Session()
+            try:
+                return _with_pending_revocations(db, [self.get_device(self.SN)])[0].syncing
+            finally:
+                db.close()
+
+        self.assertEqual(syncing(), [])
+        worker = threading.Thread(target=self.poller.pull_attendance, args=(self.SN,))
+        worker.start()
+        self.assertTrue(started.wait(5))
+        try:
+            self.assertEqual(syncing(), ["attendance"])
+        finally:
+            release.set()
+            worker.join(5)
+        self.assertEqual(syncing(), [])
+
+    def test_sync_all_reports_itself_and_the_read_inside_it(self):
+        self.assertTrue(self.poller._begin(self.SN, "all"))
+        try:
+            self.assertTrue(self.poller._begin(self.SN, "attendance"))
+            self.assertEqual(self.poller.pulling_kinds(self.SN), ["all", "attendance"])
+            self.poller._end(self.SN)
+            self.assertEqual(self.poller.pulling_kinds(self.SN), ["all"])
+            self.assertTrue(self.poller.is_pulling(self.SN))
+        finally:
+            self.poller._end(self.SN)
+        self.assertFalse(self.poller.is_pulling(self.SN))
+
+    def test_asking_whether_a_device_is_busy_never_takes_its_lock(self):
+        """The Devices page asks every ten seconds. A probe that briefly held
+        the lock could make a real pull starting at that instant be refused."""
+        from unittest import mock
+        with mock.patch.object(self.poller, "_lock_for",
+                               side_effect=AssertionError("lock touched")):
+            self.assertFalse(self.poller.is_pulling(self.SN))
+
     def test_a_second_pull_on_a_busy_device_is_refused_not_dialled(self):
         """One SDK session per terminal. A second CONNECT during a read does
         not queue — it times out, and can wedge the terminal."""
@@ -8387,11 +8439,10 @@ class PullRoutingTestCase(ProvisioningTestCase):
         acquired, release = threading.Event(), threading.Event()
 
         def _hold():
-            lock = poller._lock_for(sn)
-            lock.acquire()
+            poller._begin(sn, "attendance")
             acquired.set()
             release.wait(10)
-            lock.release()
+            poller._end(sn)
         t = threading.Thread(target=_hold, daemon=True)
         t.start()
         acquired.wait(5)

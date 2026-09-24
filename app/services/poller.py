@@ -56,13 +56,43 @@ def _lock_for(serial_number: str) -> threading.RLock:
         return lock
 
 
+# What each held lock is doing, innermost last: Sync All pushes "all", then
+# each read it runs pushes its own kind on top. Kept beside the lock rather
+# than read off it, because probing an RLock means briefly acquiring it — and
+# with the Devices page asking every ten seconds, a probe could land on the
+# exact instant a real pull tries to start and get that pull refused.
+_active: dict = {}
+
+
+def _begin(serial_number: str, kind: str) -> bool:
+    """Take the device's SDK lock for a pull of ``kind``, or refuse at once."""
+    if not _lock_for(serial_number).acquire(blocking=False):
+        return False
+    with _device_locks_guard:
+        _active.setdefault(serial_number, []).append(kind)
+    return True
+
+
+def _end(serial_number: str) -> None:
+    with _device_locks_guard:
+        stack = _active.get(serial_number)
+        if stack:
+            stack.pop()
+            if not stack:
+                del _active[serial_number]
+    _lock_for(serial_number).release()
+
+
+def pulling_kinds(serial_number: str) -> list:
+    """What is being read off this device right now, outermost first —
+    ``["all", "attendance"]`` mid Sync All, ``[]`` when the device is free."""
+    with _device_locks_guard:
+        return list(_active.get(serial_number, ()))
+
+
 def is_pulling(serial_number: str) -> bool:
     """True while a pull of any kind holds this device's SDK session."""
-    lock = _lock_for(serial_number)
-    if lock.acquire(blocking=False):
-        lock.release()
-        return False
-    return True
+    return bool(pulling_kinds(serial_number))
 
 
 BUSY_DETAIL = "Another sync is already running on this device — wait for it to finish"
@@ -127,8 +157,7 @@ def _connection_error_detail(device, exc) -> str:
 def pull_employees(serial_number: str) -> dict:
     log.info("pull_employees: starting for device %s", serial_number)
     result = {"users_synced": 0, "errors": []}
-    lock = _lock_for(serial_number)
-    if not lock.acquire(blocking=False):
+    if not _begin(serial_number, "employees"):
         log.warning(
             "pull_employees: %s is busy with another pull — refused", serial_number
         )
@@ -221,7 +250,7 @@ def pull_employees(serial_number: str) -> dict:
         )
     finally:
         db.close()
-        lock.release()
+        _end(serial_number)
 
     return result
 
@@ -229,8 +258,7 @@ def pull_employees(serial_number: str) -> dict:
 def pull_attendance(serial_number: str) -> dict:
     log.info("pull_attendance: starting for device %s", serial_number)
     result = {"attendance_synced": 0, "errors": []}
-    lock = _lock_for(serial_number)
-    if not lock.acquire(blocking=False):
+    if not _begin(serial_number, "attendance"):
         log.warning(
             "pull_attendance: %s is busy with another pull — refused", serial_number
         )
@@ -387,7 +415,7 @@ def pull_attendance(serial_number: str) -> dict:
         )
     finally:
         db.close()
-        lock.release()
+        _end(serial_number)
 
     return result
 
@@ -436,8 +464,7 @@ def store_templates(db, serial_number: str, conn) -> list:
 def pull_templates(serial_number: str) -> dict:
     log.info("pull_templates: starting for device %s", serial_number)
     result = {"templates_synced": 0, "errors": []}
-    lock = _lock_for(serial_number)
-    if not lock.acquire(blocking=False):
+    if not _begin(serial_number, "templates"):
         log.warning(
             "pull_templates: %s is busy with another pull — refused", serial_number
         )
@@ -513,7 +540,7 @@ def pull_templates(serial_number: str) -> dict:
         )
     finally:
         db.close()
-        lock.release()
+        _end(serial_number)
 
     return result
 
@@ -562,8 +589,7 @@ def store_templates(db, serial_number: str, conn) -> list:
 def pull_templates(serial_number: str) -> dict:
     log.info("pull_templates: starting for device %s", serial_number)
     result = {"templates_synced": 0, "errors": []}
-    lock = _lock_for(serial_number)
-    if not lock.acquire(blocking=False):
+    if not _begin(serial_number, "templates"):
         log.warning("pull_templates: %s is busy with another pull — refused", serial_number)
         result["errors"].append(BUSY_DETAIL)
         return result
@@ -631,7 +657,7 @@ def pull_templates(serial_number: str) -> dict:
         )
     finally:
         db.close()
-        lock.release()
+        _end(serial_number)
 
     return result
 
@@ -644,8 +670,7 @@ def pull_device(serial_number: str) -> dict:
     keys on the ``user_id`` the employee pull just wrote, and a finger for a
     person the server has not heard of yet would be dropped.
     """
-    lock = _lock_for(serial_number)
-    if not lock.acquire(blocking=False):
+    if not _begin(serial_number, "all"):
         log.warning("pull_device: %s is busy with another pull — refused", serial_number)
         return {
             "users_synced": 0,
@@ -658,7 +683,7 @@ def pull_device(serial_number: str) -> dict:
         att_result = pull_attendance(serial_number)
         tpl_result = pull_templates(serial_number)
     finally:
-        lock.release()
+        _end(serial_number)
     return {
         "users_synced": emp_result["users_synced"],
         "attendance_synced": att_result["attendance_synced"],

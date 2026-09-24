@@ -15,6 +15,7 @@
   },
   "sync_failed_short": "failed — hover for details",
   "syncing": "syncing…",
+  "sync_waiting": "waiting…",
   "took": "took {{seconds}}s",
   "load_failed": "Failed to load devices",
   "approved_toast": "{{device}} approved",
@@ -58,7 +59,8 @@
     "restart": "Restart Device",
     "restart_acc": "The terminal will reboot. The command is queued and runs when it next polls, so it will not restart at the moment you confirm. It goes offline briefly and reconnects automatically.",
     "restart_att": "The device will reboot. It will go offline briefly and reconnect automatically.",
-    "security": "Device Security"
+    "security": "Device Security",
+    "sync_busy": "Unavailable — this device is already syncing. Wait for it to finish."
   },
   "pairing_open_until": "Pairing open until {{time}}",
   "close_pairing": "Close Pairing",

@@ -15,6 +15,7 @@
   },
   "sync_failed_short": "thất bại — di chuột để xem",
   "syncing": "đang đồng bộ…",
+  "sync_waiting": "đang chờ…",
   "took": "mất {{seconds}} giây",
   "load_failed": "Không tải được danh sách thiết bị",
   "approved_toast": "Đã duyệt {{device}}",
@@ -58,7 +59,8 @@
     "restart": "Khởi động lại thiết bị",
     "restart_acc": "Máy sẽ khởi động lại. Lệnh được đưa vào hàng đợi và chạy khi máy kết nối lần tới, nên sẽ không khởi động lại ngay lúc bạn xác nhận. Máy mất kết nối một lúc rồi tự kết nối lại.",
     "restart_att": "Thiết bị sẽ khởi động lại. Máy mất kết nối một lúc rồi tự kết nối lại.",
-    "security": "Bảo mật thiết bị"
+    "security": "Bảo mật thiết bị",
+    "sync_busy": "Không khả dụng — thiết bị đang đồng bộ. Hãy đợi lần đồng bộ này hoàn tất."
   },
   "pairing_open_until": "Đang mở ghép nối đến {{time}}",
   "close_pairing": "Đóng ghép nối",

@@ -69,6 +69,11 @@ class DeviceOut(BaseModel):
     # Empty for a device never pulled over the SDK, including every `acc`
     # terminal, which is read over the command queue instead.
     pull_outcomes: dict = {}
+    # What is being read off this device over the SDK right now, outermost
+    # first: ["all", "attendance"] midway through Sync All, [] when free. Comes
+    # from the server's own lock, not from the browser that clicked, so a
+    # reload, a second tab or another operator all see the device as busy.
+    syncing: List[str] = []
 
     @field_validator("pull_outcomes", mode="before")
     @classmethod

@@ -95,11 +95,12 @@ function formatRelative(iso) {
 // comm key — is visible without reading the server log. Shown per kind and
 // never collapsed to the latest one: Sync All runs three pulls, and a
 // successful template read must not hide the attendance read that failed.
-// A kind in `running` was started from this page and has not reported back
-// yet: it shows a spinner instead of the previous (stale) tick or cross.
-function LastSyncCell({ outcomes, running }) {
+// A kind in `running` is being read right now: it shows a spinner instead of
+// the previous (stale) tick or cross. A kind in `waiting` is queued behind it
+// in the same Sync All, so its old tick is not passed off as current either.
+function LastSyncCell({ outcomes, running, waiting }) {
   const { t } = useTranslation()
-  const kinds = PULL_KINDS.filter((k) => outcomes?.[k] || running?.includes(k))
+  const kinds = PULL_KINDS.filter((k) => outcomes?.[k] || running?.includes(k) || waiting?.includes(k))
   if (kinds.length === 0) return <span className="text-gray-400">—</span>
   // One line per kind so the column stays narrow; how long it took and what
   // the pull reported (the error, on a failure) are in the tooltip.
@@ -112,6 +113,15 @@ function LastSyncCell({ outcomes, running }) {
               <span className="flex justify-center"><Spinner /></span>
               <span className="font-medium text-gray-800 whitespace-nowrap">{pullKindLabel(kind)}</span>
               <span className="text-blue-600 whitespace-nowrap">{t('devices.syncing')}</span>
+            </li>
+          )
+        }
+        if (waiting?.includes(kind)) {
+          return (
+            <li key={kind} className="contents" data-testid={`sync-waiting-${kind}`}>
+              <span className="flex justify-center"><span className="w-1.5 h-1.5 rounded-full bg-gray-300" /></span>
+              <span className="font-medium text-gray-500 whitespace-nowrap">{pullKindLabel(kind)}</span>
+              <span className="text-gray-400 whitespace-nowrap">{t('devices.sync_waiting')}</span>
             </li>
           )
         }
@@ -180,6 +190,28 @@ function Spinner() {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// Split the server's `syncing` stack into what is being read now and what is
+// still queued behind it. Sync All runs the kinds in PULL_KINDS order, so
+// mid-way through, the kinds after the current one are waiting and the ones
+// before it have already reported (their tick is fresh, not stale).
+function serverSyncState(syncing) {
+  if (!syncing?.length) return { running: [], waiting: [] }
+  const current = syncing[syncing.length - 1]
+  if (!syncing.includes('all')) return { running: [current], waiting: [] }
+  const at = PULL_KINDS.indexOf(current)
+  // Just ["all"]: between two of its reads, all of them still to come.
+  if (at < 0) return { running: [], waiting: PULL_KINDS }
+  return { running: [current], waiting: PULL_KINDS.slice(at + 1) }
+}
+
+// Busy as far as this page can tell: the server holds the device's SDK
+// session, or a click here has not reached the server yet.
+function deviceSyncState(device, localRunning) {
+  const server = serverSyncState(device.syncing)
+  const busy = (device.syncing?.length ?? 0) > 0
+  return busy ? { ...server, busy } : { running: localRunning || [], waiting: [], busy: !!localRunning?.length }
+}
 
 // Wait for the background pull(s) started by a Sync click to finish, by
 // watching the device row for a NEWER outcome of each kind than the one it
@@ -453,21 +485,25 @@ export default function Devices() {
     // operator cannot troubleshoot a menu entry that is not there) and rather
     // than left clickable (it would dial TCP 4370 and time out).
     const isAcc = (device.protocol || 'att') === 'acc'
+    // One SDK session per terminal: while any read holds it, every sync entry
+    // is shown unavailable with the reason instead of answering with a 409.
+    const busy = deviceSyncState(device, runningPulls[device.serial_number]).busy
+    const syncItem = (item) => (busy ? { ...item, onClick: undefined, disabled: true, hint: t('devices.menu.sync_busy') } : item)
 
     return [
       // "Sync all" leads, and says what it runs; the three it runs sit
       // indented beneath it so the menu shows they are its parts.
-      {
+      syncItem({
         label: t('devices.sync.all'),
         icon: 'sync',
         primary: true,
         hint: PULL_KINDS.map(pullKindLabel).join(' · '),
         onClick: () => handleSync(device, 'all'),
-      },
+      }),
       { heading: t('devices.menu.sync_each') },
       {
         group: [
-          { label: t('devices.sync.employees'), icon: 'users', onClick: () => handleSync(device, 'employees') },
+          syncItem({ label: t('devices.sync.employees'), icon: 'users', onClick: () => handleSync(device, 'employees') }),
           isAcc
             ? {
                 label: t('devices.sync.attendance'),
@@ -475,8 +511,8 @@ export default function Devices() {
                 disabled: true,
                 hint: t('devices.menu.sync_attendance_na'),
               }
-            : { label: t('devices.sync.attendance'), icon: 'calendar', onClick: () => handleSync(device, 'attendance') },
-          { label: t('devices.sync.templates'), icon: 'fingerprint', onClick: () => handleSync(device, 'templates') },
+            : syncItem({ label: t('devices.sync.attendance'), icon: 'calendar', onClick: () => handleSync(device, 'attendance') }),
+          syncItem({ label: t('devices.sync.templates'), icon: 'fingerprint', onClick: () => handleSync(device, 'templates') }),
         ],
       },
       'divider',
@@ -744,7 +780,7 @@ export default function Devices() {
                       {t('devices.col.last_seen')}: {formatDate(device.last_seen)}
                     </div>
                   </td>
-                  <td className="px-4 py-3"><LastSyncCell outcomes={device.pull_outcomes} running={runningPulls[device.serial_number]} /></td>
+                  <td className="px-4 py-3"><LastSyncCell outcomes={device.pull_outcomes} {...deviceSyncState(device, runningPulls[device.serial_number])} /></td>
                   <td className="px-4 py-3 text-right">
                     <KebabMenu items={menuItems(device)} />
                   </td>

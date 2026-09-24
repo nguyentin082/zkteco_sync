@@ -350,6 +350,34 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
     setSelectedFinger(null)
   }, [employee?.user_id])
 
+  // The hands diagram draws a finger as enrolled whichever of the two template
+  // tables it landed in. `fingerprint_templates` is the SDK's, keyed on
+  // `finger_id`; `biometric_templates` is the one PUSH's `biodata` upload and a
+  // ZKTime restore write to, where a fingerprint is `type=1` and `no` carries
+  // that same finger index. Reading only the first meant a restored backup put
+  // dozens of templates in the database and still drew ten blank fingers —
+  // which reads as a restore that did nothing.
+  //
+  // `origin` rides along because it decides what the card underneath may
+  // offer. Delete is the SDK's per-finger command and can only act on an SDK
+  // row; a `biodata` finger has no equivalent, so it is shown and not offered.
+  const fingersReady = templates !== null && biometrics !== null
+  const fingers = useMemo(() => {
+    const byFinger = new Map()
+    // Fingerprints only, and only where `no` is actually a finger index: a
+    // visible-light face arrives as `type=9, no=0` and is not a left little.
+    for (const t of biometrics || []) {
+      if (t.type !== 1 || t.no < 0 || t.no > 9) continue
+      byFinger.set(t.no, { ...t, finger_id: t.no, origin: 'biodata' })
+    }
+    // Second, so that when both tables hold the same finger the SDK row is the
+    // one shown — it is the only one Delete can act on.
+    for (const t of templates || []) {
+      byFinger.set(t.finger_id, { ...t, origin: 'sdk' })
+    }
+    return [...byFinger.values()]
+  }, [templates, biometrics])
+
   if (!employee) {
     return (
       <div className="flex-1 flex items-center justify-center text-sm text-gray-400">
@@ -393,34 +421,6 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
     allDevices.find((d) => d.serial_number === bioDeviceSn)?.protocol === 'acc'
   const sendableTo = (sn) =>
     (biometrics || []).filter((t) => t.source_device_sn !== sn).length
-
-  // The hands diagram draws a finger as enrolled whichever of the two template
-  // tables it landed in. `fingerprint_templates` is the SDK's, keyed on
-  // `finger_id`; `biometric_templates` is the one PUSH's `biodata` upload and a
-  // ZKTime restore write to, where a fingerprint is `type=1` and `no` carries
-  // that same finger index. Reading only the first meant a restored backup put
-  // dozens of templates in the database and still drew ten blank fingers —
-  // which reads as a restore that did nothing.
-  //
-  // `origin` rides along because it decides what the card underneath may
-  // offer. Delete is the SDK's per-finger command and can only act on an SDK
-  // row; a `biodata` finger has no equivalent, so it is shown and not offered.
-  const fingersReady = templates !== null && biometrics !== null
-  const fingers = useMemo(() => {
-    const byFinger = new Map()
-    // Fingerprints only, and only where `no` is actually a finger index: a
-    // visible-light face arrives as `type=9, no=0` and is not a left little.
-    for (const t of biometrics || []) {
-      if (t.type !== 1 || t.no < 0 || t.no > 9) continue
-      byFinger.set(t.no, { ...t, finger_id: t.no, origin: 'biodata' })
-    }
-    // Second, so that when both tables hold the same finger the SDK row is the
-    // one shown — it is the only one Delete can act on.
-    for (const t of templates || []) {
-      byFinger.set(t.finger_id, { ...t, origin: 'sdk' })
-    }
-    return [...byFinger.values()]
-  }, [templates, biometrics])
 
   async function handlePushToDevice(e) {
     e.preventDefault()

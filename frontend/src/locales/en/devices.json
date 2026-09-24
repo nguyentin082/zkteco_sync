@@ -13,6 +13,8 @@
     "attendance": "Attendance",
     "templates": "Templates"
   },
+  "sync_failed_short": "failed — hover for details",
+  "syncing": "syncing…",
   "took": "took {{seconds}}s",
   "load_failed": "Failed to load devices",
   "approved_toast": "{{device}} approved",
@@ -72,6 +74,8 @@
   "device_offline": "device is offline",
   "empty": "No devices registered yet. Add one to get started.",
   "col": {
+    "device": "Device",
+    "connection": "Connection",
     "name": "Name",
     "serial": "Serial",
     "address": "Address",

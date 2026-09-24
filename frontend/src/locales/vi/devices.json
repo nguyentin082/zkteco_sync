@@ -13,6 +13,8 @@
     "attendance": "Chấm công",
     "templates": "Mẫu sinh trắc"
   },
+  "sync_failed_short": "thất bại — di chuột để xem",
+  "syncing": "đang đồng bộ…",
   "took": "mất {{seconds}} giây",
   "load_failed": "Không tải được danh sách thiết bị",
   "approved_toast": "Đã duyệt {{device}}",
@@ -72,6 +74,8 @@
   "device_offline": "thiết bị đang ngoại tuyến",
   "empty": "Chưa có thiết bị nào. Hãy thêm một thiết bị để bắt đầu.",
   "col": {
+    "device": "Thiết bị",
+    "connection": "Kết nối",
     "name": "Tên",
     "serial": "Serial",
     "address": "Địa chỉ",

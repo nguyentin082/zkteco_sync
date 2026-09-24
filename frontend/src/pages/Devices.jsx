@@ -15,6 +15,7 @@ import WriteLcdDrawer from '../components/WriteLcdDrawer'
 import CommandsDrawer from '../components/CommandsDrawer'
 import DeviceUsersDrawer from '../components/DeviceUsersDrawer'
 import PasswordConfirmModal from '../components/PasswordConfirmModal'
+import Icon from '../components/Icon'
 
 function StatusBadge({ isOnline }) {
   const { t } = useTranslation()
@@ -94,28 +95,87 @@ function formatRelative(iso) {
 // comm key — is visible without reading the server log. Shown per kind and
 // never collapsed to the latest one: Sync All runs three pulls, and a
 // successful template read must not hide the attendance read that failed.
-function LastSyncCell({ outcomes }) {
+// A kind in `running` was started from this page and has not reported back
+// yet: it shows a spinner instead of the previous (stale) tick or cross.
+function LastSyncCell({ outcomes, running }) {
   const { t } = useTranslation()
-  const kinds = PULL_KINDS.filter((k) => outcomes?.[k])
+  const kinds = PULL_KINDS.filter((k) => outcomes?.[k] || running?.includes(k))
   if (kinds.length === 0) return <span className="text-gray-400">—</span>
+  // One line per kind so the column stays narrow; how long it took and what
+  // the pull reported (the error, on a failure) are in the tooltip.
   return (
-    <ul className="space-y-0.5">
+    <ul className="grid grid-cols-[auto_auto_1fr] gap-x-2 gap-y-1 items-center text-xs">
       {kinds.map((kind) => {
+        if (running?.includes(kind)) {
+          return (
+            <li key={kind} className="contents" data-testid={`sync-running-${kind}`}>
+              <span className="flex justify-center"><Spinner /></span>
+              <span className="font-medium text-gray-800 whitespace-nowrap">{pullKindLabel(kind)}</span>
+              <span className="text-blue-600 whitespace-nowrap">{t('devices.syncing')}</span>
+            </li>
+          )
+        }
         const o = outcomes[kind]
+        // The <li> is `display: contents` (no box), so the tooltip goes on its cells.
+        const title = `${pullKindLabel(kind)} · ${formatDateTime(o.at)}${o.seconds != null ? ` · ${formatTook(o.seconds)}` : ''}\n${o.detail}`
         return (
-          <li
-            key={kind}
-            title={`${pullKindLabel(kind)} · ${formatDateTime(o.at)}${o.seconds != null ? ` · ${t('devices.took', { seconds: o.seconds })}` : ''}\n${o.detail}`}
-            className={`text-xs ${o.ok ? 'text-gray-600' : 'text-red-700 font-medium'}`}
-          >
-            <span className={o.ok ? 'text-green-600' : 'text-red-600'}>{o.ok ? '✓' : '✗'}</span>{' '}
-            {pullKindLabel(kind)} · {formatRelative(o.at)}
-            {o.seconds != null && <span className="text-gray-400"> · {Math.round(o.seconds)}s</span>}
-            {!o.ok && <span className="block font-normal text-red-600 truncate max-w-[16rem]">{o.detail}</span>}
+          <li key={kind} className="contents">
+            <StatusMark ok={o.ok} />
+            <span title={title} className={`font-medium whitespace-nowrap ${o.ok ? 'text-gray-800' : 'text-red-700'}`}>
+              {pullKindLabel(kind)}
+            </span>
+            <span title={title} className={`whitespace-nowrap ${o.ok ? 'text-gray-500' : 'text-red-600'}`}>
+              {o.ok ? formatRelative(o.at) : t('devices.sync_failed_short')}
+            </span>
           </li>
         )
       })}
     </ul>
+  )
+}
+
+function EditButton({ onClick, title, ariaLabel, testId }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      aria-label={ariaLabel}
+      data-testid={testId}
+      className="p-0.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+    >
+      <Icon name="pencil" className="w-3.5 h-3.5" />
+    </button>
+  )
+}
+
+// "32s", "10m 33s", "1h 5m" — how long a pull took, short enough for a column.
+function formatTook(seconds) {
+  const s = Math.round(seconds)
+  if (s < 60) return `${s}s`
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
+}
+
+function StatusMark({ ok }) {
+  return (
+    <span
+      className={`inline-flex items-center justify-center w-4 h-4 rounded-full ${
+        ok ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
+      }`}
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="w-2.5 h-2.5" aria-hidden="true">
+        <path d={ok ? 'm5 12.5 4.5 4.5L19 7.5' : 'M6 6l12 12M18 6 6 18'} />
+      </svg>
+    </span>
+  )
+}
+
+function Spinner() {
+  return (
+    <svg className="animate-spin h-3.5 w-3.5 text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+    </svg>
   )
 }
 
@@ -126,7 +186,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // had before the click. Resolves to the fresh outcomes, or null when nothing
 // arrived within the budget (an SDK connect times out after 30s; Sync All is
 // three of those in a row, and a device with a year of backlog reads slowly).
-async function waitForPullOutcomes(sn, kinds, before, budgetMs = 180_000) {
+// `onKindDone(kind)` fires as each kind reports, so the row can drop its
+// spinner as soon as that pull is finished (Sync All runs them one by one).
+async function waitForPullOutcomes(sn, kinds, before, onKindDone, budgetMs = 180_000) {
+  const done = new Set()
   const started = Date.now()
   while (Date.now() - started < budgetMs) {
     await sleep(2000)
@@ -137,6 +200,12 @@ async function waitForPullOutcomes(sn, kinds, before, budgetMs = 180_000) {
       continue
     }
     const outcomes = device.pull_outcomes || {}
+    for (const k of kinds) {
+      if (!done.has(k) && outcomes[k] && outcomes[k].at !== before?.[k]?.at) {
+        done.add(k)
+        onKindDone?.(k)
+      }
+    }
     if (kinds.every((k) => outcomes[k] && outcomes[k].at !== before?.[k]?.at)) {
       return outcomes
     }
@@ -157,6 +226,7 @@ export default function Devices() {
   const [drawer, setDrawer] = useState(null) // { type, device }
   const [pwConfirm, setPwConfirm] = useState(null) // { title, description, onConfirm }
   const [toast, setToast] = useState(null)
+  const [runningPulls, setRunningPulls] = useState({}) // { [serial]: kinds[] } started here, not yet reported
 
   const showToast = useCallback((message, type = 'success') => setToast({ message, type }), [])
   const dismissToast = useCallback(() => setToast(null), [])
@@ -264,10 +334,26 @@ export default function Devices() {
       templates: [],
     }[type]
     const name = device.name || device.serial_number
+    const sn = device.serial_number
+    const markRunning = (kinds) =>
+      setRunningPulls((prev) => ({ ...prev, [sn]: [...new Set([...(prev[sn] || []), ...kinds])] }))
+    const markDone = (kinds) =>
+      setRunningPulls((prev) => {
+        const left = (prev[sn] || []).filter((k) => !kinds.includes(k))
+        const next = { ...prev }
+        if (left.length) next[sn] = left
+        else delete next[sn]
+        return next
+      })
+    // Spinner from the click: the templates pull is synchronous, so the
+    // request itself is the work; the others then run in the background.
+    const clickKinds = type === 'all' ? PULL_KINDS : [type]
+    markRunning(clickKinds)
     let result
     try {
       result = await calls[type]()
     } catch (err) {
+      markDone(clickKinds)
       showToast(err.message, 'error')
       return
     }
@@ -276,6 +362,8 @@ export default function Devices() {
     // happened and that is what gets shown. Reporting "started" for work
     // that has only been enqueued is the thing this avoids.
     if (result?.status === 'queued' || pullKinds.length === 0) {
+      markDone(clickKinds)
+      loadDevices()
       showToast(serverMessage(result, t('devices.sync_done', { label, device: name })))
       return
     }
@@ -284,7 +372,8 @@ export default function Devices() {
     // the pull actually did and report THAT, in red if it failed. Before
     // this, a timed-out connect was visible only in the server log.
     showToast(t('devices.sync_started', { label, device: name }))
-    const outcomes = await waitForPullOutcomes(device.serial_number, pullKinds, device.pull_outcomes)
+    const outcomes = await waitForPullOutcomes(sn, pullKinds, device.pull_outcomes, (k) => markDone([k]))
+    markDone(clickKinds)
     loadDevices()
     if (!outcomes) {
       showToast(t('devices.sync_no_result', { label, device: name }), 'error')
@@ -562,14 +651,9 @@ export default function Devices() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 [&>th:first-child]:rounded-tl-xl [&>th:last-child]:rounded-tr-xl">
-                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.name')}</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.serial')}</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.address')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.device')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.connection')}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.status')}</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.trust')}</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.timezone')}</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.protocol')}</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.last_seen')}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.last_sync')}</th>
                 <th className="px-4 py-3" />
               </tr>
@@ -578,10 +662,13 @@ export default function Devices() {
               {devices.map((device) => (
                 <tr
                   key={device.serial_number}
-                  className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors"
+                  className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors align-top"
                 >
-                  <td className="px-4 py-3 font-medium text-gray-900">
-                    {device.name || <span className="text-gray-400">—</span>}
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-gray-900">
+                      {device.name || <span className="text-gray-400">—</span>}
+                    </div>
+                    <div className="mt-0.5 font-mono text-xs text-gray-500">{device.serial_number}</div>
                     {/* An outstanding revocation is a safety state, not a
                         queue statistic: somebody has been taken off this door
                         in the system and the door has not been told. It is
@@ -595,61 +682,56 @@ export default function Devices() {
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-gray-500 font-mono text-xs">{device.serial_number}</td>
-                  <td className="px-4 py-3 text-gray-500">{device.ip_address}:{device.port}</td>
-                  <td className="px-4 py-3"><StatusBadge isOnline={device.is_online} /></td>
-                  <td className="px-4 py-3">
-                    <TrustBadge status={device.status} ipLocked={device.ip_check_enabled} />
-                  </td>
-                  <td className="px-4 py-3">
-                    {/* Read-only. Changing it relabels every record this device
-                        pushed, so it is edited only through its own modal. */}
-                    <span className="inline-flex items-center gap-2">
-                      <span className="text-gray-600 text-xs">{device.timezone || '—'}</span>
-                      {isAdmin && (
-                        <button
-                          onClick={() => setTzModal(device)}
-                          title={t('devices.edit_timezone_title')}
-                          aria-label={t('devices.edit_timezone_aria', { sn: device.serial_number })}
-                          data-testid={`edit-timezone-${device.serial_number}`}
-                          className="text-xs text-blue-500 hover:text-blue-700 underline"
-                        >
-                          {t('common.edit')}
-                        </button>
-                      )}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    {/* Read-only. Normally set automatically from what the
-                        device announces (D9); an operator corrects it only
-                        through its own modal, which pins the value. */}
-                    <span className="inline-flex items-center gap-2">
-                      <span className="text-gray-600 text-xs">
+                  <td className="px-4 py-3 text-xs">
+                    <div className="text-sm text-gray-700 whitespace-nowrap">{device.ip_address}:{device.port}</div>
+                    {/* Protocol and timezone are read-only here. The protocol
+                        is normally set from what the device announces (D9);
+                        changing the timezone relabels every record this device
+                        pushed. Each is edited only through its own modal. */}
+                    <div className="mt-1 flex items-center gap-1.5 text-gray-600">
+                      <span className="uppercase font-medium text-[10px] tracking-wide bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">
                         {device.protocol || 'att'}
-                        {device.protocol_pinned && (
-                          <span
-                            title={t('devices.pinned_title')}
-                            className="ml-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5"
-                          >
-                            {t('devices.pinned')}
-                          </span>
-                        )}
                       </span>
+                      {device.protocol_pinned && (
+                        <span
+                          title={t('devices.pinned_title')}
+                          className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5"
+                        >
+                          {t('devices.pinned')}
+                        </span>
+                      )}
                       {isAdmin && (
-                        <button
+                        <EditButton
                           onClick={() => setProtoModal(device)}
                           title={t('devices.edit_protocol_title')}
-                          aria-label={t('devices.edit_protocol_aria', { sn: device.serial_number })}
-                          data-testid={`edit-protocol-${device.serial_number}`}
-                          className="text-xs text-blue-500 hover:text-blue-700 underline"
-                        >
-                          {t('common.edit')}
-                        </button>
+                          ariaLabel={t('devices.edit_protocol_aria', { sn: device.serial_number })}
+                          testId={`edit-protocol-${device.serial_number}`}
+                        />
                       )}
-                    </span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-1.5 text-gray-500" title={t('devices.col.timezone')}>
+                      <Icon name="clock" className="w-3.5 h-3.5 text-gray-400" />
+                      <span>{device.timezone || '—'}</span>
+                      {isAdmin && (
+                        <EditButton
+                          onClick={() => setTzModal(device)}
+                          title={t('devices.edit_timezone_title')}
+                          ariaLabel={t('devices.edit_timezone_aria', { sn: device.serial_number })}
+                          testId={`edit-timezone-${device.serial_number}`}
+                        />
+                      )}
+                    </div>
                   </td>
-                  <td className="px-4 py-3 text-gray-400 text-xs">{formatDate(device.last_seen)}</td>
-                  <td className="px-4 py-3"><LastSyncCell outcomes={device.pull_outcomes} /></td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <StatusBadge isOnline={device.is_online} />
+                      <TrustBadge status={device.status} ipLocked={device.ip_check_enabled} />
+                    </div>
+                    <div className="mt-1 text-xs text-gray-400" title={t('devices.col.last_seen')}>
+                      {t('devices.col.last_seen')}: {formatDate(device.last_seen)}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3"><LastSyncCell outcomes={device.pull_outcomes} running={runningPulls[device.serial_number]} /></td>
                   <td className="px-4 py-3 text-right">
                     <KebabMenu items={menuItems(device)} />
                   </td>

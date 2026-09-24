@@ -1,0 +1,111 @@
+{
+  "common": {
+    "request_failed": "Yêu cầu thất bại",
+    "download_failed": "Tải xuống thất bại",
+    "upload_failed": "Tải lên thất bại",
+    "upload_too_large": "Tệp lớn hơn dung lượng máy chủ cho phép tải lên.",
+    "validation": "Một số giá trị gửi lên bị thiếu hoặc không hợp lệ."
+  },
+  "auth": {
+    "not_authenticated": "Chưa đăng nhập",
+    "session_expired": "Phiên đăng nhập đã hết hạn",
+    "csrf_invalid": "Thiếu hoặc sai mã CSRF",
+    "password_change_required": "Cần đổi mật khẩu",
+    "admin_required": "Cần quyền quản trị viên",
+    "invalid_credentials": "Sai tên đăng nhập hoặc mật khẩu",
+    "locked": "Tài khoản bị khóa do nhập sai quá nhiều lần. Thử lại sau {{minutes}} phút.",
+    "current_password_wrong": "Mật khẩu hiện tại không đúng",
+    "password_too_short": "Mật khẩu mới phải có ít nhất {{min}} ký tự",
+    "password_same": "Mật khẩu mới phải khác mật khẩu hiện tại",
+    "invalid_password": "Mật khẩu không đúng"
+  },
+  "attendance": {
+    "range_inverted": "Ngày kết thúc đang trước ngày bắt đầu. Hãy chọn ngày \"Đến\" sau ngày \"Từ\".",
+    "export_too_many": "Có {{total, number}} bản ghi khớp bộ lọc, trong khi mỗi lần xuất tối đa {{max, number}}. Hãy thu hẹp khoảng ngày (mỗi lần một tháng) rồi xuất lại.",
+    "timesheet_too_many": "Khoảng này gồm {{days, number}} ngày cho {{people, number}} người, tức {{rows, number}} dòng bảng công, trong khi mỗi lần xuất tối đa {{max, number}}. Hãy thu hẹp khoảng ngày (mỗi lần một tháng) hoặc chọn một nhân viên, rồi xuất lại."
+  },
+  "employee": {
+    "not_found": "Không tìm thấy nhân viên",
+    "user_id_required": "Bắt buộc nhập mã nhân viên (PIN)",
+    "user_id_taken": "Mã nhân viên {{user_id}} đã tồn tại",
+    "still_enrolled": "{{user_id}} vẫn đang được đăng ký trên {{count}} cửa: {{doors}}. Hãy thu hồi khỏi từng cửa trước và chờ thiết bị xác nhận — xóa hồ sơ ở đây khi cửa vẫn giữ thông tin xác thực sẽ để lại một lối vào vô hình mà không có dấu vết nào.",
+    "no_photo": "Chưa có ảnh nào được chụp cho nhân viên này",
+    "photo_undecodable": "Ảnh đã lưu không đọc được"
+  },
+  "user": {
+    "not_found": "Không tìm thấy người dùng",
+    "password_too_short": "Mật khẩu phải có ít nhất {{min}} ký tự",
+    "username_exists": "Tên đăng nhập đã tồn tại",
+    "cannot_demote_self": "Bạn không thể hạ quyền hoặc vô hiệu hóa chính tài khoản của mình.",
+    "last_admin_demote": "Đây là quản trị viên đang hoạt động cuối cùng — hạ quyền hoặc vô hiệu hóa sẽ khóa tất cả mọi người. Hãy cấp quyền quản trị cho người khác trước.",
+    "cannot_delete_self": "Bạn không thể xóa chính tài khoản của mình.",
+    "last_admin_delete": "Đây là quản trị viên đang hoạt động cuối cùng — xóa sẽ khóa tất cả mọi người. Hãy cấp quyền quản trị cho người khác trước."
+  },
+  "device": {
+    "not_found": "Không tìm thấy thiết bị",
+    "already_registered": "Thiết bị đã được đăng ký",
+    "invalid_cidr": "CIDR hoặc địa chỉ IP không hợp lệ: {{values}}",
+    "ip_check_needs_cidr": "Hãy thêm ít nhất một CIDR được phép trước khi bật kiểm tra IP",
+    "invalid_timezone": "'{{tz}}' không phải tên múi giờ IANA hợp lệ. Hãy dùng tên trong cơ sở dữ liệu tz, ví dụ Asia/Ho_Chi_Minh.",
+    "sync_busy": "Thiết bị đang có một lần đồng bộ khác — hãy đợi nó hoàn tất",
+    "acc_no_attendance_pull": "{{sn}} là máy kiểm soát ra vào. Không kéo chấm công từ loại máy này — máy tự đẩy từng lượt chấm công lên ngay khi xảy ra. Không có lệnh nào được đưa vào hàng đợi; chấm công từ máy này sẽ tự xuất hiện trong mục Chấm công.",
+    "connect_failed": "Không kết nối được với thiết bị",
+    "comm_key_refused": "Thiết bị từ chối kết nối — có thể mã comm key đã cấu hình bị sai",
+    "info_refresh_sdk": "{{sn}} được đọc trực tiếp qua SDK mỗi lần mở Thông tin thiết bị, nên không cần làm mới — hãy đóng rồi mở lại.",
+    "acc_no_time_read": "{{sn}} là máy kiểm soát ra vào, và không có lệnh nào để hỏi giờ hiện tại của máy. Không có lệnh nào được đưa vào hàng đợi. Việc đặt giờ vẫn hoạt động — hãy dùng Đặt giờ.",
+    "invalid_datetime": "Định dạng ngày giờ không hợp lệ — hãy dùng ISO 8601",
+    "time_missing_value": "Cần gửi sync=true hoặc giá trị dt",
+    "acc_no_lock_read": "{{sn}} là máy kiểm soát ra vào, và không có lệnh nào để hỏi cửa đang khóa hay mở. Không có lệnh nào được đưa vào hàng đợi.",
+    "acc_no_lcd": "{{sn}} là máy kiểm soát ra vào, và không có lệnh nào để ghi lên màn hình của máy. Không có lệnh nào được đưa vào hàng đợi.",
+    "user_not_enrolled": "Người dùng chưa được đăng ký trên thiết bị này",
+    "user_not_enrolled_push_first": "Người dùng chưa được đăng ký trên thiết bị này — hãy đẩy họ lên trước",
+    "user_not_on_device_push_first": "Không tìm thấy người dùng trên thiết bị — hãy đẩy họ lên trước"
+  },
+  "command": {
+    "not_found": "Không có lệnh đang chờ nào với mã này trên thiết bị",
+    "already_concluded": "Thiết bị đã xử lý xong lệnh này — không còn gì để hủy",
+    "history_not_found": "Không có dòng lịch sử nào với mã này trên thiết bị",
+    "retry_not_failed": "Chỉ có thể thử lại lệnh bị lỗi; lệnh này đã được thiết bị xác nhận"
+  },
+  "revocation": {
+    "pending": "Lệnh thu hồi {{user_id}} trên {{sn}} chưa được thiết bị xác nhận (còn {{count}} lệnh trong hàng đợi: {{ids}}). Đẩy lên lúc này sẽ tạo lệnh mâu thuẫn với nó. Hãy chờ máy nhận lệnh thu hồi, hoặc hủy lệnh thu hồi trước — chưa có gì được đưa vào hàng đợi.",
+    "none_outstanding": "Không có lệnh thu hồi nào đang chờ cho {{user_id}} trên {{sn}}"
+  },
+  "biometric": {
+    "none_captured": "Người này chưa có mẫu sinh trắc học nào. Họ cần đăng ký khuôn mặt hoặc vân tay tại máy trước — chưa có gì được đưa vào hàng đợi.",
+    "originals_on_device": "Cả {{count}} mẫu đã lưu của người này đều được lấy trên chính {{sn}}, và {{sn}} vẫn còn giữ chúng. Gửi bản sao từ máy chủ về sẽ ghi đè lên dữ liệu đang dùng mà không được gì, nên chưa có gì được đưa vào hàng đợi. (Nếu máy thật sự đã mất dữ liệu, hãy thu hồi người này khỏi cửa trước; khi đó các mẫu này sẽ gửi được.)",
+    "unsendable": "Không thể gửi dữ liệu mẫu đã lưu: {{reasons}} — chưa có gì được đưa vào hàng đợi.",
+    "acc_no_delete": "{{sn}} là máy kiểm soát ra vào, và giao thức PUSH không có lệnh nào đã được xác nhận để xóa riêng một mẫu sinh trắc học. Chưa có gì được đưa vào hàng đợi. Để gỡ sinh trắc học của người này khỏi cửa, hãy gỡ người đó khỏi cửa (nút Gỡ trong danh sách Thiết bị đã đăng ký)."
+  },
+  "fingerprint": {
+    "none_in_db": "Chưa có mẫu vân tay nào trong cơ sở dữ liệu cho nhân viên này"
+  },
+  "door": {
+    "not_integer": "Số cửa phải là số nguyên",
+    "seconds_not_integer": "Số giây phải là số nguyên",
+    "out_of_range": "Số cửa phải từ {{min}} đến {{max}}; cửa 0 nghĩa là TẤT CẢ các cửa trên bộ điều khiển và không bao giờ được gửi từ đây",
+    "latch_refused": "255 không phải là mở khóa 255 giây — trong giao thức này nó giữ cửa mở vô thời hạn. Hãy dùng tối đa {{max}} giây.",
+    "seconds_out_of_range": "Số giây phải từ {{min}} đến {{max}}; 0 là lệnh đóng ngay, không phải mở khóa"
+  },
+  "backup": {
+    "invalid_token": "Mã tệp tải lên không hợp lệ.",
+    "upload_gone": "Máy chủ không còn giữ tệp đã tải lên. Hãy tải tệp lên lại.",
+    "upload_expired": "Tệp tải lên đã hết hạn và bị xóa ({{minutes}} phút sau khi nhận). Hãy tải tệp lên lại.",
+    "upload_save_failed": "Không lưu được tệp tải lên.",
+    "upload_empty": "Tệp tải lên bị rỗng.",
+    "template_write_failed": "Không ghi được tệp mẫu vào {{path}}. Hãy đặt BACKUP_DATA_DIR thành một thư mục ứng dụng có quyền ghi.",
+    "db_unreadable": "Tệp mở được như một cơ sở dữ liệu nhưng không đọc được: {{error}}",
+    "nothing_selected": "Chưa chọn mục nào để khôi phục. Hãy chọn ít nhất một trong: {{parts}}",
+    "restore_partial_failure": "Quá trình khôi phục bị lỗi giữa chừng. Phần đã ghi được giữ nguyên — chạy lại khôi phục là an toàn, nó sẽ bỏ qua những gì đã có. Hãy xem log máy chủ.",
+    "no_template": "Chưa có bản sao lưu ZKTime nào làm mẫu, trong khi cần có: phần lớn cơ sở dữ liệu ZKTime là cấu hình riêng mà ứng dụng này không tự tạo được. Hãy khôi phục một bản sao lưu ZKTime hoặc tải một bản lên làm mẫu, sau đó Sao lưu sẽ hoạt động.",
+    "export_failed": "Không tạo được tệp xuất. Chưa có gì được ghi và tệp mẫu của bạn vẫn nguyên vẹn. Hãy xem log máy chủ.",
+    "file_missing": "Tệp đã tải lên không còn nữa. Hãy tải lên lại.",
+    "not_sqlite": "Đây không phải cơ sở dữ liệu SQLite. Bản sao lưu ZKTime là tệp .db do nút Backup của ZKTime tạo ra — không phải tệp .zip, .bak hay .sql.",
+    "open_failed": "Không mở được cơ sở dữ liệu: {{error}}",
+    "corrupt": "Tệp có phần đầu giống SQLite nhưng không đọc được ({{error}}). Nhiều khả năng tệp bị cắt cụt hoặc hỏng — hãy kiểm tra việc sao chép đã hoàn tất và thử sao lưu lại.",
+    "not_zktime": "Cơ sở dữ liệu SQLite này không phải bản sao lưu ZKTime — thiếu bảng {{tables}}. Hãy kiểm tra bạn đã tải đúng tệp do nút Backup của ZKTime tạo ra.",
+    "unknown_device": "Chưa có thiết bị nào mang số serial '{{sn}}' được đăng ký ở đây, và bản sao lưu này cũng không có máy nào mang serial đó, nên không có gì để tạo thiết bị. Các máy trong tệp: {{terminals}}.",
+    "unknown_device_no_terminals": "Chưa có thiết bị nào mang số serial '{{sn}}' được đăng ký ở đây, và bản sao lưu này không ghi số serial máy nào, nên không có gì để tạo thiết bị.",
+    "unknown_parts": "Mục khôi phục không hợp lệ: {{parts}}"
+  }
+}

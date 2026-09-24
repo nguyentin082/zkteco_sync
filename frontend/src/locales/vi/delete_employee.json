@@ -1,0 +1,7 @@
+{
+  "title": "Xóa nhân viên",
+  "intro": "Xóa <name>{{name}}</name> <pin>({{user_id}})</pin> khỏi hệ thống.",
+  "removed": "<b>Sẽ xóa:</b> hồ sơ đăng ký và thông tin xác thực — liên kết thiết bị, mẫu khuôn mặt và vân tay đã thu, và ảnh.",
+  "kept": "<b>Giữ lại:</b> lịch sử chấm công của người này. Các lượt chấm công đã diễn ra và đã được gửi lên HRM — xóa chúng ở đây sẽ làm sai lệch lịch sử tính lương, vì vậy thao tác này không bao giờ động đến dữ liệu chấm công.",
+  "not_final": "Việc này chưa chắc là vĩnh viễn: nếu thiết bị vẫn báo mã PIN này, lần đồng bộ sau sẽ tạo lại hồ sơ nhân viên từ dữ liệu thực tế trên máy — đó là hành vi đúng, không phải lỗi."
+}

@@ -1,0 +1,32 @@
+{
+  "roles": {
+    "admin": "quản trị",
+    "viewer": "chỉ xem"
+  },
+  "active": "Hoạt động",
+  "inactive": "Vô hiệu",
+  "edit_title": "Sửa người dùng",
+  "add_title": "Thêm người dùng",
+  "full_name": "Họ tên",
+  "setup_password": "Mật khẩu khởi tạo",
+  "setup_password_hint": "Người dùng phải đổi mật khẩu này ở lần đăng nhập đầu tiên.",
+  "role": "Vai trò",
+  "cannot_change_own_role": "Bạn không thể đổi vai trò của chính mình.",
+  "reset_password": "Đặt lại mật khẩu",
+  "reset_intro": "Đặt mật khẩu khởi tạo mới cho <b>{{username}}</b>. Họ sẽ phải đổi mật khẩu ở lần đăng nhập tới, và mọi phiên đăng nhập hiện tại của họ sẽ kết thúc ngay.",
+  "load_failed": "Không tải được danh sách người dùng",
+  "created": "Đã tạo người dùng",
+  "updated": "Đã cập nhật người dùng",
+  "password_reset_for": "Đã đặt lại mật khẩu cho {{username}}",
+  "deactivated": "Đã vô hiệu hóa {{username}}",
+  "activated": "Đã kích hoạt {{username}}",
+  "confirm_delete": "Xóa người dùng \"{{username}}\"? Không thể hoàn tác.",
+  "deleted": "Đã xóa người dùng",
+  "deactivate": "Vô hiệu hóa",
+  "activate": "Kích hoạt",
+  "empty": "Chưa có người dùng nào.",
+  "name": "Họ tên",
+  "status": "Trạng thái",
+  "last_login": "Đăng nhập lần cuối",
+  "you": "bạn"
+}

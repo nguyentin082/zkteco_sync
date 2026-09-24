@@ -1,0 +1,7 @@
+{
+  "title": "Delete employee",
+  "intro": "Remove <name>{{name}}</name> <pin>({{user_id}})</pin> from the system.",
+  "removed": "<b>Removed:</b> the enrolment and credential records — device links, captured face and fingerprint templates, and photos.",
+  "kept": "<b>Kept:</b> this person's attendance history. Punches already happened and have already reached the HRM — deleting them here would rewrite payroll history, so nothing here ever touches attendance.",
+  "not_final": "This is not necessarily final: if a device still reports this PIN, a later sync will re-create this employee record from what the terminal actually holds — that is correct behaviour, not a bug."
+}

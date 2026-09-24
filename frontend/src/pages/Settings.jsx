@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
+import { serverMessage, translateError } from '../i18n'
 import { api, saveBlobAs } from '../api'
+import { formatDate, formatDateTime, formatNumber } from '../format'
 import { useAuth } from '../auth'
 
 function Field({ label, hint, children }) {
@@ -15,6 +18,7 @@ function Field({ label, hint, children }) {
 }
 
 function StatusRow({ label, value, mono, editable, onEdit }) {
+  const { t } = useTranslation()
   return (
     <div className="flex justify-between items-center py-2.5 border-b border-gray-100 last:border-0 text-sm">
       <span className="text-gray-500">{label}</span>
@@ -25,7 +29,7 @@ function StatusRow({ label, value, mono, editable, onEdit }) {
             onClick={onEdit}
             className="text-xs text-blue-500 hover:text-blue-700 underline"
           >
-            Edit
+            {t('common.edit')}
           </button>
         )}
       </div>
@@ -57,28 +61,15 @@ function Toast({ message, type = 'success', onDismiss }) {
 // makes the file precious and the operation one-way, which is why nothing
 // here happens on a single click — the file is uploaded and described first,
 // and a second, separate button is what writes.
-const PART_LABELS = {
-  employees: 'Employees',
-  attendance: 'Attendance',
-  templates: 'Fingerprint templates',
-}
-
-function partHint(part) {
-  if (part === 'attendance') {
-    return 'The punches themselves. This is the part that cannot be re-read from the terminal.'
-  }
-  if (part === 'employees') {
-    return 'Names, PINs and cards. Fills in blanks; never overwrites what you typed.'
-  }
-  return 'Stored as a copy only. Whether a ZKTime template can be pushed back to a terminal has not been verified, so nothing sends them automatically.'
-}
+// Labels and hints under settings.restore.parts.* / part_hints.*.
+const PARTS = ['employees', 'attendance', 'templates']
 
 function Count({ label, value, muted }) {
   return (
     <div className="flex justify-between py-1.5 text-sm">
       <span className="text-gray-500">{label}</span>
       <span className={muted ? 'text-gray-400' : 'font-medium text-gray-900'}>
-        {typeof value === 'number' ? value.toLocaleString() : value ?? '—'}
+        {typeof value === 'number' ? formatNumber(value) : value ?? '—'}
       </span>
     </div>
   )
@@ -124,7 +115,7 @@ function Stat({ label, value }) {
   return (
     <div className="min-w-0">
       <p className="text-base font-semibold text-gray-900 tabular-nums truncate">
-        {typeof value === 'number' ? value.toLocaleString() : value ?? '—'}
+        {typeof value === 'number' ? formatNumber(value) : value ?? '—'}
       </p>
       <p className="text-xs text-gray-400 truncate">{label}</p>
     </div>
@@ -134,6 +125,7 @@ function Stat({ label, value }) {
 // Warnings are shown; notes are true, wanted occasionally, and folded away.
 // Five paragraphs of equal weight is how the one that matters gets skipped.
 function Messages({ warnings, notes }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   if (!warnings?.length && !notes?.length) return null
   return (
@@ -150,7 +142,7 @@ function Messages({ warnings, notes }) {
             onClick={() => setOpen((v) => !v)}
             className="text-xs text-gray-500 hover:text-gray-700 underline"
           >
-            {open ? 'Hide details' : `Details (${notes.length})`}
+            {open ? t('settings.hide_details') : t('settings.details', { count: notes.length })}
           </button>
           {open && (
             <div className="mt-2 space-y-2">
@@ -178,6 +170,7 @@ function Messages({ warnings, notes }) {
 // the server holds; a restore saves its own file as that template, which is
 // why Backup normally just works.
 function BackupPanel({ showToast }) {
+  const { t } = useTranslation()
   const [template, setTemplate] = useState(null)
   const [pruneMissing, setPruneMissing] = useState(false)
   const [busy, setBusy] = useState(null)      // 'build'|'save'|'template'
@@ -205,7 +198,7 @@ function BackupPanel({ showToast }) {
     setBusy('save')
     try {
       const { blob, filename } = await api.backup.downloadExport(built.token)
-      if (await saveBlobAs(blob, filename || built.filename)) showToast('Backup saved')
+      if (await saveBlobAs(blob, filename || built.filename)) showToast(t('settings.backup.saved'))
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
@@ -220,7 +213,7 @@ function BackupPanel({ showToast }) {
     setBusy('template')
     try {
       setTemplate(await api.backup.setTemplate(file))
-      showToast('Template saved')
+      showToast(t('settings.backup.template_saved'))
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
@@ -235,8 +228,8 @@ function BackupPanel({ showToast }) {
       <PanelHeader
         icon="backup"
         tone="text-blue-500"
-        title="Backup"
-        subtitle="Build a ZKTime .db from this app's data and choose where to save it."
+        title={t('settings.backup.title')}
+        subtitle={t('settings.backup.subtitle')}
       />
 
       {!built && (
@@ -249,7 +242,7 @@ function BackupPanel({ showToast }) {
                 className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white
                            text-sm font-medium px-4 py-2 rounded-lg transition-colors"
               >
-                {busy === 'build' ? 'Building…' : 'Create backup'}
+                {busy === 'build' ? t('settings.backup.building') : t('settings.backup.create')}
               </button>
 
               <label className="flex gap-2.5 items-center cursor-pointer">
@@ -259,7 +252,7 @@ function BackupPanel({ showToast }) {
                   onChange={(e) => setPruneMissing(e.target.checked)}
                 />
                 <span className="text-xs text-gray-600">
-                  Remove people this app no longer has
+                  {t('settings.backup.prune')}
                 </span>
               </label>
 
@@ -267,9 +260,7 @@ function BackupPanel({ showToast }) {
                   line rather than a paragraph: the data is this app's, the
                   configuration around it is not. */}
               <p className="text-xs text-gray-400 leading-relaxed">
-                Built on the ZKTime backup saved{' '}
-                {new Date(template.saved_at).toLocaleDateString()} — its settings,
-                shifts, departments and logins are carried over untouched.
+                {t('settings.backup.built_on', { date: formatDate(template.saved_at) })}
               </p>
             </>
           )}
@@ -278,9 +269,7 @@ function BackupPanel({ showToast }) {
             <div className="space-y-2.5">
               <p className="text-xs text-amber-900 bg-amber-50 border border-amber-100
                             rounded-lg px-3 py-2 leading-relaxed">
-                No template yet. Most of a ZKTime database is its own configuration,
-                which this app cannot invent — so a backup is built on a real one.
-                Restore a ZKTime .db and this fills in by itself, or pick one here.
+                {t('settings.backup.no_template')}
               </p>
               <input
                 type="file"
@@ -298,7 +287,9 @@ function BackupPanel({ showToast }) {
           {template?.configured && !template.usable && (
             <p className="text-xs text-red-900 bg-red-50 border border-red-100
                           rounded-lg px-3 py-2 leading-relaxed">
-              The stored template can no longer be read: {template.problem}
+              {t('settings.backup.template_unreadable', {
+                problem: translateError(template.problem_code, template.problem_params, template.problem),
+              })}
             </p>
           )}
         </div>
@@ -314,12 +305,12 @@ function BackupPanel({ showToast }) {
           </div>
 
           <div className="grid grid-cols-3 gap-3 rounded-lg bg-gray-50 px-4 py-3">
-            <Stat label="Punches" value={built.punches.written} />
+            <Stat label={t('settings.punches')} value={built.punches.written} />
             <Stat
-              label="People"
+              label={t('settings.people')}
               value={built.employees.updated + built.employees.created + built.employees.stubs}
             />
-            <Stat label="Fingerprints" value={built.templates.written} />
+            <Stat label={t('settings.fingerprints')} value={built.templates.written} />
           </div>
 
           <Messages warnings={built.warnings} notes={built.notes} />
@@ -331,14 +322,14 @@ function BackupPanel({ showToast }) {
               className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white
                          text-sm font-medium px-4 py-2 rounded-lg transition-colors"
             >
-              {busy === 'save' ? 'Saving…' : 'Save as…'}
+              {busy === 'save' ? t('common.saving') : t('settings.backup.save_as')}
             </button>
             <button
               onClick={() => { setBuilt(null); load() }}
               className="border border-gray-300 text-gray-700 hover:bg-gray-50
                          text-sm font-medium px-4 py-2 rounded-lg transition-colors"
             >
-              Done
+              {t('settings.done')}
             </button>
           </div>
         </div>
@@ -352,6 +343,7 @@ function BackupPanel({ showToast }) {
 // Restore — upload a ZKTime .db and read it into this app.
 // ---------------------------------------------------------------------------
 function RestorePanel({ showToast, onRestored }) {
+  const { t } = useTranslation()
   const [devices, setDevices] = useState([])
   const [staged, setStaged] = useState(null)   // { token, size, preview }
   const [deviceSn, setDeviceSn] = useState('')
@@ -392,7 +384,7 @@ function RestorePanel({ showToast, onRestored }) {
       // register it. Preselecting it is what keeps that from being a detour
       // through the Devices page for a machine the operator cannot reach.
       const only = data.preview.terminals.length === 1 ? data.preview.terminals[0] : null
-      const match = data.preview.terminals.find((t) => t.registered_here)
+      const match = data.preview.terminals.find((term) => term.registered_here)
       setTerminalId(only ? String(only.terminal_id) : match ? String(match.terminal_id) : '')
       setDeviceSn(only?.serial || match?.serial || '')
     } catch (err) {
@@ -430,7 +422,7 @@ function RestorePanel({ showToast, onRestored }) {
       })
       setResult(summary)
       setStaged(null)       // the server deleted the staged file on success
-      showToast('Restore finished')
+      showToast(t('settings.restore.finished'))
       // The restored file has just become the backup template, so the panel
       // beside this one has something to build on now.
       if (summary.template_saved) onRestored?.()
@@ -449,17 +441,17 @@ function RestorePanel({ showToast, onRestored }) {
   // else — the whole reason the file is being restored. The server creates
   // the device from the file's own record of it.
   const newTerminals = (preview?.terminals || []).filter(
-    (t) => t.serial && !t.registered_here
+    (term) => term.serial && !term.registered_here
   )
-  const willCreate = newTerminals.find((t) => t.serial === deviceSn)
+  const willCreate = newTerminals.find((term) => term.serial === deviceSn)
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
       <PanelHeader
         icon="restore"
         tone="text-emerald-600"
-        title="Restore"
-        subtitle="Read a ZKTime .db into this app. Adds only; running it twice changes nothing."
+        title={t('settings.restore.title')}
+        subtitle={t('settings.restore.subtitle')}
       />
 
       {!staged && !result && (
@@ -475,7 +467,7 @@ function RestorePanel({ showToast, onRestored }) {
                        file:cursor-pointer disabled:opacity-50"
           />
           {busy === 'upload' && (
-            <p className="text-xs text-gray-500 mt-2">Uploading and reading the file…</p>
+            <p className="text-xs text-gray-500 mt-2">{t('settings.restore.uploading')}</p>
           )}
         </div>
       )}
@@ -483,10 +475,10 @@ function RestorePanel({ showToast, onRestored }) {
       {preview && (
         <div className="px-5 py-4 space-y-4 flex-1">
           <div className="grid grid-cols-3 gap-3 rounded-lg bg-gray-50 px-4 py-3">
-            <Stat label="People" value={preview.employees} />
-            <Stat label="Punches" value={preview.punches.total} />
+            <Stat label={t('settings.people')} value={preview.employees} />
+            <Stat label={t('settings.punches')} value={preview.punches.total} />
             <Stat
-              label="Covering"
+              label={t('settings.restore.covering')}
               value={preview.punches.first
                 ? `${preview.punches.first.slice(0, 7)} → ${preview.punches.last.slice(0, 7)}`
                 : '—'}
@@ -496,38 +488,38 @@ function RestorePanel({ showToast, onRestored }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
-                Terminal in file
+                {t('settings.restore.terminal_in_file')}
               </label>
               <select
                 value={terminalId}
                 onChange={(e) => {
                   setTerminalId(e.target.value)
-                  const t = preview.terminals.find((x) => String(x.terminal_id) === e.target.value)
+                  const term = preview.terminals.find((x) => String(x.terminal_id) === e.target.value)
                   // Follows the terminal whether or not it is registered —
                   // an unregistered one is an offer to create it, not a dead
                   // end, so it belongs in the box like any other choice.
-                  if (t?.serial) setDeviceSn(t.serial)
+                  if (term?.serial) setDeviceSn(term.serial)
                 }}
                 className="w-full border border-gray-300 rounded-lg px-2.5 py-2 text-sm"
               >
-                <option value="">All terminals</option>
-                {preview.terminals.map((t) => (
-                  <option key={t.terminal_id} value={t.terminal_id}>
-                    {t.name || t.serial || 'Unnamed'} ({t.punches.toLocaleString()})
+                <option value="">{t('settings.restore.all_terminals')}</option>
+                {preview.terminals.map((term) => (
+                  <option key={term.terminal_id} value={term.terminal_id}>
+                    {term.name || term.serial || t('settings.restore.unnamed')} ({formatNumber(term.punches)})
                   </option>
                 ))}
               </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
-                Onto device
+                {t('settings.restore.onto_device')}
               </label>
               <select
                 value={deviceSn}
                 onChange={(e) => setDeviceSn(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-2.5 py-2 text-sm"
               >
-                <option value="">Choose…</option>
+                <option value="">{t('settings.restore.choose')}</option>
                 {devices.map((d) => (
                   <option key={d.serial_number} value={d.serial_number}>
                     {d.name || d.serial_number} ({d.timezone})
@@ -537,10 +529,10 @@ function RestorePanel({ showToast, onRestored }) {
                     "add this device" is never something that happens without
                     having been read first. */}
                 {newTerminals.length > 0 && (
-                  <optgroup label="In this file — will be added">
-                    {newTerminals.map((t) => (
-                      <option key={t.serial} value={t.serial}>
-                        {t.name || t.serial} ({t.serial})
+                  <optgroup label={t('settings.restore.will_be_added')}>
+                    {newTerminals.map((term) => (
+                      <option key={term.serial} value={term.serial}>
+                        {term.name || term.serial} ({term.serial})
                       </option>
                     ))}
                   </optgroup>
@@ -554,17 +546,17 @@ function RestorePanel({ showToast, onRestored }) {
               by default, so an operator who does not see the row gets a
               backup with no fingerprints in it and no idea why. */}
           <div>
-            <p className="text-xs font-medium text-gray-600 mb-1.5">What to restore</p>
+            <p className="text-xs font-medium text-gray-600 mb-1.5">{t('settings.restore.what_to_restore')}</p>
             <div className="flex flex-wrap gap-x-4 gap-y-2">
-              {Object.keys(PART_LABELS).map((part) => (
+              {PARTS.map((part) => (
                 <label key={part} className="flex gap-2 items-center cursor-pointer"
-                       title={partHint(part)}>
+                       title={t(`settings.restore.part_hints.${part}`)}>
                   <input
                     type="checkbox"
                     checked={parts[part]}
                     onChange={(e) => setParts({ ...parts, [part]: e.target.checked })}
                   />
-                  <span className="text-xs text-gray-700">{PART_LABELS[part]}</span>
+                  <span className="text-xs text-gray-700">{t(`settings.restore.parts.${part}`)}</span>
                 </label>
               ))}
             </div>
@@ -576,8 +568,7 @@ function RestorePanel({ showToast, onRestored }) {
           {parts.attendance && !parts.employees && (
             <p className="text-xs text-amber-900 bg-amber-50 border border-amber-100
                           rounded-lg px-3 py-2 leading-relaxed">
-              Without Employees, punches for anyone off the roster are stored but
-              hidden on the Attendance screen.
+              {t('settings.restore.no_employees_warning')}
             </p>
           )}
 
@@ -587,19 +578,15 @@ function RestorePanel({ showToast, onRestored }) {
           {willCreate && (
             <p className="text-xs text-blue-900 bg-blue-50 border border-blue-100
                           rounded-lg px-3 py-2 leading-relaxed">
-              {willCreate.name || willCreate.serial} is not registered here yet.
-              Restoring adds it from this file
-              {willCreate.ip_address ? ` (${willCreate.ip_address})` : ''}, approved
-              in your name, with the default timezone. Check that timezone on the
-              device&rsquo;s page afterwards &mdash; the restored punches are
-              labelled with it.
+              {willCreate.ip_address
+                ? t('settings.restore.will_create_ip', { name: willCreate.name || willCreate.serial, ip: willCreate.ip_address })
+                : t('settings.restore.will_create', { name: willCreate.name || willCreate.serial })}
             </p>
           )}
 
           {/* Said once, near the device picker it explains. */}
           <p className="text-xs text-gray-400">
-            Times are stored exactly as the file records them, labelled with the
-            chosen device&rsquo;s timezone. Nothing is shifted.
+            {t('settings.restore.times_note')}
           </p>
 
           <div className="flex gap-2">
@@ -609,7 +596,7 @@ function RestorePanel({ showToast, onRestored }) {
               className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white
                          text-sm font-medium px-4 py-2 rounded-lg transition-colors"
             >
-              {busy === 'restore' ? 'Restoring…' : 'Restore'}
+              {busy === 'restore' ? t('settings.restore.restoring') : t('settings.restore.title')}
             </button>
             <button
               onClick={handleDiscard}
@@ -617,7 +604,7 @@ function RestorePanel({ showToast, onRestored }) {
               className="border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50
                          text-sm font-medium px-4 py-2 rounded-lg transition-colors"
             >
-              Discard
+              {t('settings.restore.discard')}
             </button>
           </div>
         </div>
@@ -626,10 +613,10 @@ function RestorePanel({ showToast, onRestored }) {
       {result && (
         <div className="px-5 py-4 space-y-4 flex-1">
           <div className="grid grid-cols-3 gap-3 rounded-lg bg-gray-50 px-4 py-3">
-            <Stat label="Punches added" value={result.attendance?.inserted ?? '—'} />
-            <Stat label="People added" value={result.employees?.created ?? '—'} />
+            <Stat label={t('settings.restore.punches_added')} value={result.attendance?.inserted ?? '—'} />
+            <Stat label={t('settings.restore.people_added')} value={result.employees?.created ?? '—'} />
             <Stat
-              label="Already present"
+              label={t('settings.restore.already_present')}
               value={result.attendance?.already_present ?? '—'}
             />
           </div>
@@ -637,7 +624,7 @@ function RestorePanel({ showToast, onRestored }) {
           <Messages warnings={result.warnings} notes={result.notes} />
 
           <button onClick={reset} className="text-sm text-blue-600 hover:text-blue-800 underline">
-            Restore another file
+            {t('settings.restore.another')}
           </button>
         </div>
       )}
@@ -649,6 +636,7 @@ function RestorePanel({ showToast, onRestored }) {
 const AUDIT_PAGE_SIZE = 20
 
 function AuditLog() {
+  const { t } = useTranslation()
   const [filters, setFilters] = useState({ actor: '', action: '', from_date: '', to_date: '' })
   const [offset, setOffset] = useState(0)
   const [data, setData] = useState(null)
@@ -680,37 +668,37 @@ function AuditLog() {
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mt-6">
       <div className="px-5 py-4 border-b border-gray-200">
-        <p className="font-medium text-gray-900">Audit Log</p>
+        <p className="font-medium text-gray-900">{t('settings.audit.title')}</p>
         <p className="text-xs text-gray-400 mt-0.5">
-          Privileged and physical actions, attributed to an actor and source IP.
+          {t('settings.audit.subtitle')}
         </p>
       </div>
 
       <form onSubmit={applyFilters} className="px-5 py-4 border-b border-gray-100 grid grid-cols-2 sm:grid-cols-5 gap-3">
         <input
           type="text"
-          placeholder="Actor"
+          placeholder={t('settings.audit.actor')}
           value={filters.actor}
           onChange={(e) => setFilters((f) => ({ ...f, actor: e.target.value }))}
           className="input text-sm"
         />
         <input
           type="text"
-          placeholder="Action"
+          placeholder={t('settings.audit.action')}
           value={filters.action}
           onChange={(e) => setFilters((f) => ({ ...f, action: e.target.value }))}
           className="input text-sm"
         />
         <input
           type="date"
-          aria-label="From date"
+          aria-label={t('settings.audit.from_date')}
           value={filters.from_date}
           onChange={(e) => setFilters((f) => ({ ...f, from_date: e.target.value }))}
           className="input text-sm"
         />
         <input
           type="date"
-          aria-label="To date"
+          aria-label={t('settings.audit.to_date')}
           value={filters.to_date}
           onChange={(e) => setFilters((f) => ({ ...f, to_date: e.target.value }))}
           className="input text-sm"
@@ -719,7 +707,7 @@ function AuditLog() {
           type="submit"
           className="bg-gray-900 hover:bg-gray-800 text-white text-xs font-medium py-2 rounded-lg transition-colors"
         >
-          Filter
+          {t('settings.audit.filter')}
         </button>
       </form>
 
@@ -727,19 +715,19 @@ function AuditLog() {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
-              <th className="px-5 py-2 font-medium">Time</th>
-              <th className="px-5 py-2 font-medium">Actor</th>
-              <th className="px-5 py-2 font-medium">Action</th>
-              <th className="px-5 py-2 font-medium">Target</th>
+              <th className="px-5 py-2 font-medium">{t('settings.audit.time')}</th>
+              <th className="px-5 py-2 font-medium">{t('settings.audit.actor')}</th>
+              <th className="px-5 py-2 font-medium">{t('settings.audit.action')}</th>
+              <th className="px-5 py-2 font-medium">{t('settings.audit.target')}</th>
               <th className="px-5 py-2 font-medium">IP</th>
-              <th className="px-5 py-2 font-medium">Detail</th>
+              <th className="px-5 py-2 font-medium">{t('settings.audit.detail')}</th>
             </tr>
           </thead>
           <tbody>
             {items.map((row) => (
               <tr key={row.id} className="border-b border-gray-50 last:border-0">
                 <td className="px-5 py-2 text-xs text-gray-500 whitespace-nowrap">
-                  {new Date(row.created_at).toLocaleString()}
+                  {formatDateTime(row.created_at)}
                 </td>
                 <td className="px-5 py-2 text-xs text-gray-900">{row.actor}</td>
                 <td className="px-5 py-2 text-xs font-mono text-gray-700">{row.action}</td>
@@ -751,7 +739,7 @@ function AuditLog() {
             {!loading && items.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-5 py-6 text-center text-xs text-gray-400">
-                  No matching entries
+                  {t('settings.audit.empty')}
                 </td>
               </tr>
             )}
@@ -760,7 +748,7 @@ function AuditLog() {
       </div>
 
       <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 text-xs text-gray-500">
-        <span>{total} total</span>
+        <span>{t('settings.audit.total', { count: total })}</span>
         <div className="flex gap-2">
           <button
             type="button"
@@ -768,7 +756,7 @@ function AuditLog() {
             onClick={() => setOffset(Math.max(0, offset - AUDIT_PAGE_SIZE))}
             className="border border-gray-300 disabled:opacity-40 text-gray-600 px-3 py-1 rounded-lg"
           >
-            Prev
+            {t('common.prev')}
           </button>
           <button
             type="button"
@@ -776,7 +764,7 @@ function AuditLog() {
             onClick={() => setOffset(offset + AUDIT_PAGE_SIZE)}
             className="border border-gray-300 disabled:opacity-40 text-gray-600 px-3 py-1 rounded-lg"
           >
-            Next
+            {t('common.next')}
           </button>
         </div>
       </div>
@@ -785,6 +773,7 @@ function AuditLog() {
 }
 
 export default function Settings() {
+  const { t } = useTranslation()
   const { user } = useAuth()
   const [cfg, setCfg] = useState(null)
   const [form, setForm] = useState(null)        // null = view mode, object = edit mode
@@ -806,8 +795,8 @@ export default function Settings() {
 
   useEffect(() => {
     load()
-    const t = setInterval(load, 15_000)
-    return () => clearInterval(t)
+    const timer = setInterval(load, 15_000)
+    return () => clearInterval(timer)
   }, [load])
 
   function startEdit() {
@@ -841,7 +830,7 @@ export default function Settings() {
       const updated = await api.hrmSync.update(payload)
       setCfg(updated)
       setForm(null)
-      showToast('Configuration saved')
+      showToast(t('settings.hrm.saved'))
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
@@ -855,7 +844,7 @@ export default function Settings() {
     try {
       const updated = await api.hrmSync.update({ enabled: next })
       setCfg(updated)
-      showToast(next ? 'Sync resumed' : 'Sync paused')
+      showToast(next ? t('settings.hrm.resumed') : t('settings.hrm.paused_toast'))
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
@@ -871,7 +860,7 @@ export default function Settings() {
       const updated = await api.hrmSync.update({ last_synced_id: val })
       setCfg(updated)
       setEditId(null)
-      showToast('Last synced ID updated')
+      showToast(t('settings.hrm.last_id_updated'))
     } catch (err) {
       showToast(err.message, 'error')
     }
@@ -880,8 +869,7 @@ export default function Settings() {
   async function handleRunNow() {
     setRunning(true)
     try {
-      await api.hrmSync.run()
-      showToast('Sync started')
+      showToast(serverMessage(await api.hrmSync.run(), t('messages.hrm_sync_started')))
       setTimeout(load, 3000)
     } catch (err) {
       showToast(err.message, 'error')
@@ -894,16 +882,16 @@ export default function Settings() {
 
   return (
     <div className="max-w-6xl">
-      <h1 className="text-xl font-semibold text-gray-900 mb-6">Settings</h1>
+      <h1 className="text-xl font-semibold text-gray-900 mb-6">{t('nav.settings')}</h1>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
           <div>
-            <p className="font-medium text-gray-900">HRM Attendance Sync</p>
+            <p className="font-medium text-gray-900">{t('settings.hrm.title')}</p>
             <p className="text-xs text-gray-400 mt-0.5">
-              Pushes new attendance records to your HRM server on a schedule.
+              {t('settings.hrm.subtitle')}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -915,7 +903,7 @@ export default function Settings() {
                   ? 'bg-yellow-100 text-yellow-700'
                   : 'bg-gray-100 text-gray-500'
               }`}>
-                {cfg.enabled && isConfigured ? 'Active' : isConfigured ? 'Paused' : 'Not configured'}
+                {cfg.enabled && isConfigured ? t('settings.hrm.active') : isConfigured ? t('settings.hrm.paused') : t('settings.hrm.not_configured')}
               </span>
             )}
             {/* Pause/Resume is the control an operator needs to find fast —
@@ -928,15 +916,15 @@ export default function Settings() {
                 disabled={toggling}
                 data-testid="hrm-toggle"
                 title={cfg.enabled
-                  ? 'Stop pushing records to the HRM until resumed'
-                  : 'Start pushing records to the HRM again'}
+                  ? t('settings.hrm.pause_title')
+                  : t('settings.hrm.resume_title')}
                 className={`text-sm font-medium px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
                   cfg.enabled
                     ? 'border-amber-300 text-amber-800 hover:bg-amber-50'
                     : 'border-green-300 text-green-800 hover:bg-green-50'
                 }`}
               >
-                {toggling ? 'Working…' : cfg.enabled ? 'Pause' : 'Resume'}
+                {toggling ? t('settings.hrm.working') : cfg.enabled ? t('settings.hrm.pause') : t('settings.hrm.resume')}
               </button>
             )}
             {cfg && !form && (
@@ -944,20 +932,20 @@ export default function Settings() {
                 onClick={startEdit}
                 className="text-sm text-blue-600 hover:text-blue-800 font-medium"
               >
-                Configure
+                {t('settings.hrm.configure')}
               </button>
             )}
           </div>
         </div>
 
         {cfg === null && (
-          <div className="p-6 text-sm text-gray-400">Loading…</div>
+          <div className="p-6 text-sm text-gray-400">{t('common.loading')}</div>
         )}
 
         {/* Config form */}
         {form && (
           <form onSubmit={handleSave} className="p-5 space-y-4 border-b border-gray-100 max-w-2xl">
-            <Field label="Endpoint URL">
+            <Field label={t('settings.hrm.endpoint')}>
               <input
                 type="url"
                 value={form.endpoint}
@@ -968,21 +956,21 @@ export default function Settings() {
             </Field>
 
             <Field
-              label="Secret Key"
-              hint={cfg.secret_set ? 'leave blank to keep the current secret' : undefined}
+              label={t('settings.hrm.secret_key')}
+              hint={cfg.secret_set ? t('settings.hrm.secret_keep') : undefined}
             >
               <input
                 type="password"
                 autoComplete="new-password"
                 value={form.secret}
                 onChange={(e) => setForm((f) => ({ ...f, secret: e.target.value }))}
-                placeholder={cfg.secret_set ? '••••••••' : 'Shared secret configured in server.php'}
+                placeholder={cfg.secret_set ? '••••••••' : t('settings.hrm.secret_placeholder')}
                 className="input w-full text-sm"
               />
             </Field>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Location ID">
+              <Field label={t('settings.hrm.location_id')}>
                 <input
                   type="text"
                   value={form.location_id}
@@ -991,7 +979,7 @@ export default function Settings() {
                 />
               </Field>
 
-              <Field label="Interval" hint="seconds">
+              <Field label={t('settings.hrm.interval')} hint={t('settings.hrm.seconds')}>
                 <input
                   type="number"
                   min={60}
@@ -1008,14 +996,14 @@ export default function Settings() {
                 onClick={cancelEdit}
                 className="flex-1 border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium py-2 rounded-lg transition-colors"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 type="submit"
                 disabled={saving}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
               >
-                {saving ? 'Saving…' : 'Save'}
+                {saving ? t('common.saving') : t('common.save')}
               </button>
             </div>
           </form>
@@ -1026,24 +1014,24 @@ export default function Settings() {
         {cfg && !form && (
           <div className="px-5 max-w-2xl">
             <div className="flex justify-between items-center py-2.5 border-b border-gray-100 text-sm">
-              <span className="text-gray-500">Secret</span>
+              <span className="text-gray-500">{t('settings.hrm.secret')}</span>
               <span
                 className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
                   cfg.secret_set ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-500'
                 }`}
               >
-                {cfg.secret_set ? 'Set' : 'Not set'}
+                {cfg.secret_set ? t('device_security.is_set') : t('device_security.not_set')}
               </span>
             </div>
             <StatusRow
-              label="Last run"
+              label={t('settings.hrm.last_run')}
               // A server event, genuinely UTC, so the viewer's own locale is
               // the right lens for it — unlike a punch time, which is the
               // device's wall-clock and is never re-zoned.
-              value={cfg.last_run_at ? new Date(cfg.last_run_at).toLocaleString() : null}
+              value={cfg.last_run_at ? formatDateTime(cfg.last_run_at) : null}
             />
             <StatusRow
-              label="Last synced ID"
+              label={t('settings.hrm.last_synced_id')}
               value={cfg.last_synced_id ?? 0}
               mono
               editable={editId === null}
@@ -1063,24 +1051,24 @@ export default function Settings() {
                   type="submit"
                   className="bg-blue-600 text-white text-xs font-medium px-3 rounded-lg"
                 >
-                  Update
+                  {t('common.update')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setEditId(null)}
                   className="border border-gray-300 text-gray-600 text-xs font-medium px-3 rounded-lg"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
               </form>
             )}
-            <StatusRow label="Records pushed (last run)" value={cfg.records_last_push?.toLocaleString()} />
-            <StatusRow label="Total records pushed" value={cfg.total_pushed?.toLocaleString()} />
-            <StatusRow label="Interval" value={cfg.interval_seconds ? `${cfg.interval_seconds}s` : null} />
-            <StatusRow label="Location ID" value={cfg.location_id} />
+            <StatusRow label={t('settings.hrm.records_last_push')} value={cfg.records_last_push != null ? formatNumber(cfg.records_last_push) : null} />
+            <StatusRow label={t('settings.hrm.total_pushed')} value={cfg.total_pushed != null ? formatNumber(cfg.total_pushed) : null} />
+            <StatusRow label={t('settings.hrm.interval')} value={cfg.interval_seconds ? t('time.seconds', { count: cfg.interval_seconds }) : null} />
+            <StatusRow label={t('settings.hrm.location_id')} value={cfg.location_id} />
             {cfg.last_error && (
               <div className="py-3 border-b border-gray-100">
-                <p className="text-xs font-medium text-red-600 mb-1">Last error</p>
+                <p className="text-xs font-medium text-red-600 mb-1">{t('settings.hrm.last_error')}</p>
                 <p className="text-xs text-red-500 font-mono break-all">{cfg.last_error}</p>
               </div>
             )}
@@ -1095,7 +1083,7 @@ export default function Settings() {
               disabled={running}
               className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
             >
-              {running ? 'Starting…' : 'Sync Now'}
+              {running ? t('employees.starting') : t('settings.hrm.sync_now')}
             </button>
           </div>
         )}

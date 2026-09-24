@@ -1,0 +1,12 @@
+{
+  "title": "Change Protocol",
+  "intro": "<b>{{device}}</b> normally has this set automatically from what the device announces. Use this only when a terminal has just been switched between cloud and local server modes.",
+  "protocol": "Protocol",
+  "current_pinned": "currently {{protocol}} (manually pinned)",
+  "current_auto": "currently {{protocol}} (automatic)",
+  "options": {
+    "att": "Attendance PUSH (att)",
+    "acc": "Security PUSH (acc, access control)"
+  },
+  "pin_notice": "Saving pins this value: the server stops changing it automatically until the device itself sends evidence it speaks a different protocol (a fresh handshake, an attendance push, or a registration call), at which point the pin is cleared and the correction is recorded in the audit log — never silent."
+}

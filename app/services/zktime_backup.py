@@ -103,7 +103,16 @@ _BATCH = 1000
 
 
 class ZKTimeBackupError(Exception):
-    """The file cannot be read as a ZKTime backup, and why."""
+    """The file cannot be read as a ZKTime backup, and why.
+
+    ``code`` and ``params`` are what the UI translates (see app/errors.py);
+    the message stays the English sentence for logs and API callers.
+    """
+
+    def __init__(self, message: str, code: str = "", **params):
+        super().__init__(message)
+        self.code = code
+        self.params = params
 
 
 # ---------------------------------------------------------------------------
@@ -119,19 +128,26 @@ def open_backup(path: str) -> sqlite3.Connection:
     reading.
     """
     if not os.path.isfile(path):
-        raise ZKTimeBackupError("The uploaded file is no longer available. Upload it again.")
+        raise ZKTimeBackupError(
+            "The uploaded file is no longer available. Upload it again.",
+            code="backup.file_missing",
+        )
 
     with open(path, "rb") as handle:
         if handle.read(len(_SQLITE_MAGIC)) != _SQLITE_MAGIC:
             raise ZKTimeBackupError(
                 "This is not a SQLite database. A ZKTime backup is the .db file "
-                "ZKTime's own Backup button writes — not a .zip, .bak or .sql export."
+                "ZKTime's own Backup button writes — not a .zip, .bak or .sql export.",
+                code="backup.not_sqlite",
             )
 
     try:
         conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     except sqlite3.Error as exc:
-        raise ZKTimeBackupError(f"The database could not be opened: {exc}") from exc
+        raise ZKTimeBackupError(
+            f"The database could not be opened: {exc}",
+            code="backup.open_failed", error=str(exc),
+        ) from exc
 
     conn.row_factory = sqlite3.Row
 
@@ -152,7 +168,8 @@ def open_backup(path: str) -> sqlite3.Connection:
         raise ZKTimeBackupError(
             f"The file starts like a SQLite database but cannot be read as one "
             f"({exc}). It is most likely truncated or corrupt — check the copy "
-            "completed, and try the backup again."
+            "completed, and try the backup again.",
+            code="backup.corrupt", error=str(exc),
         ) from exc
 
     missing = [name for name in _REQUIRED_TABLES if name not in present]
@@ -161,7 +178,8 @@ def open_backup(path: str) -> sqlite3.Connection:
         raise ZKTimeBackupError(
             "This SQLite database is not a ZKTime backup — it has no "
             + ", ".join(missing)
-            + " table. Check you uploaded the file ZKTime's Backup button produced."
+            + " table. Check you uploaded the file ZKTime's Backup button produced.",
+            code="backup.not_zktime", tables=", ".join(missing),
         )
 
     return conn
@@ -429,7 +447,9 @@ def adopt_terminal(db: Session, conn: sqlite3.Connection, device_sn: str,
             "backup holds no terminal with that serial either, so there is "
             "nothing to create it from. "
             + (f"The file's terminal(s): {', '.join(known)}."
-               if known else "The file names no terminal serial at all.")
+               if known else "The file names no terminal serial at all."),
+            code="backup.unknown_device" if known else "backup.unknown_device_no_terminals",
+            sn=device_sn, terminals=", ".join(known),
         )
 
     device = Device(
@@ -475,7 +495,10 @@ def restore(db: Session, conn: sqlite3.Connection, *, device_sn: str,
     # one: a typo in `parts` must not leave a registered device behind.
     unknown = [part for part in parts if part not in PARTS]
     if unknown:
-        raise ZKTimeBackupError(f"Unknown restore part(s): {', '.join(unknown)}")
+        raise ZKTimeBackupError(
+            f"Unknown restore part(s): {', '.join(unknown)}",
+            code="backup.unknown_parts", parts=", ".join(unknown),
+        )
 
     device_sn = str(device_sn or "").strip()
     device = db.query(Device).filter_by(serial_number=device_sn).first()

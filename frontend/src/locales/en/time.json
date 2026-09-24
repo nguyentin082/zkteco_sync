@@ -1,0 +1,9 @@
+{
+  "seconds": "{{count}}s",
+  "minutes": "{{count}}m",
+  "hours": "{{count}}h",
+  "days": "{{count}}d",
+  "ago": "{{time}} ago",
+  "in": "in {{time}}",
+  "just_now": "just now"
+}

@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n, { serverMessage } from '../i18n'
 import { api } from '../api'
+import { formatDate as formatDay, formatDateTime, formatDuration, formatTime as formatClock } from '../format'
 import { useAuth } from '../auth'
 import DeviceFormModal from '../components/DeviceFormModal'
 import DeviceTimezoneModal from '../components/DeviceTimezoneModal'
@@ -14,14 +17,15 @@ import DeviceUsersDrawer from '../components/DeviceUsersDrawer'
 import PasswordConfirmModal from '../components/PasswordConfirmModal'
 
 function StatusBadge({ isOnline }) {
+  const { t } = useTranslation()
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
+      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
         isOnline ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
       }`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-400'}`} />
-      {isOnline ? 'Online' : 'Offline'}
+      {isOnline ? t('devices.online') : t('devices.offline')}
     </span>
   )
 }
@@ -33,18 +37,19 @@ const TRUST_STYLES = {
 }
 
 function TrustBadge({ status, ipLocked }) {
+  const { t } = useTranslation()
   return (
     <span className="inline-flex items-center gap-1.5">
       <span
-        className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
+        className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
           TRUST_STYLES[status] || 'bg-gray-100 text-gray-500'
         }`}
       >
-        {status ? status[0].toUpperCase() + status.slice(1) : 'Unknown'}
+        {t(`devices.trust.${status || 'unknown'}`, { defaultValue: status })}
       </span>
       {ipLocked && (
         <span
-          title="Only pushes from the allowed CIDRs are accepted"
+          title={t('devices.ip_locked_title')}
           className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600"
         >
           IP
@@ -73,14 +78,14 @@ function Toast({ message, type, onDismiss }) {
   )
 }
 
-const PULL_KINDS = { employees: 'Employees', attendance: 'Attendance', templates: 'Templates' }
+const PULL_KINDS = ['employees', 'attendance', 'templates']
+const pullKindLabel = (kind) => i18n.t(`devices.pull_kinds.${kind}`)
 
 function formatRelative(iso) {
   const seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000)
-  if (seconds < 60) return 'just now'
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`
-  if (seconds < 86_400) return `${Math.floor(seconds / 3600)} h ago`
-  return new Date(iso).toLocaleDateString()
+  if (seconds < 60) return i18n.t('time.just_now')
+  if (seconds < 86_400) return i18n.t('time.ago', { time: formatDuration(seconds) })
+  return formatDay(iso)
 }
 
 // What the last SDK pull of each kind did (DeviceOut.pull_outcomes). The pull
@@ -90,7 +95,8 @@ function formatRelative(iso) {
 // never collapsed to the latest one: Sync All runs three pulls, and a
 // successful template read must not hide the attendance read that failed.
 function LastSyncCell({ outcomes }) {
-  const kinds = Object.keys(PULL_KINDS).filter((k) => outcomes?.[k])
+  const { t } = useTranslation()
+  const kinds = PULL_KINDS.filter((k) => outcomes?.[k])
   if (kinds.length === 0) return <span className="text-gray-400">—</span>
   return (
     <ul className="space-y-0.5">
@@ -99,11 +105,11 @@ function LastSyncCell({ outcomes }) {
         return (
           <li
             key={kind}
-            title={`${PULL_KINDS[kind]} · ${new Date(o.at).toLocaleString()}${o.seconds != null ? ` · took ${o.seconds}s` : ''}\n${o.detail}`}
+            title={`${pullKindLabel(kind)} · ${formatDateTime(o.at)}${o.seconds != null ? ` · ${t('devices.took', { seconds: o.seconds })}` : ''}\n${o.detail}`}
             className={`text-xs ${o.ok ? 'text-gray-600' : 'text-red-700 font-medium'}`}
           >
             <span className={o.ok ? 'text-green-600' : 'text-red-600'}>{o.ok ? '✓' : '✗'}</span>{' '}
-            {PULL_KINDS[kind]} · {formatRelative(o.at)}
+            {pullKindLabel(kind)} · {formatRelative(o.at)}
             {o.seconds != null && <span className="text-gray-400"> · {Math.round(o.seconds)}s</span>}
             {!o.ok && <span className="block font-normal text-red-600 truncate max-w-[16rem]">{o.detail}</span>}
           </li>
@@ -139,6 +145,7 @@ async function waitForPullOutcomes(sn, kinds, before, budgetMs = 180_000) {
 }
 
 export default function Devices() {
+  const { t } = useTranslation()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [devices, setDevices] = useState([])
@@ -160,11 +167,11 @@ export default function Devices() {
       setDevices(list)
       setPairing(window)
     } catch {
-      showToast('Failed to load devices', 'error')
+      showToast(t('devices.load_failed'), 'error')
     } finally {
       setLoading(false)
     }
-  }, [showToast])
+  }, [showToast, t])
 
   useEffect(() => {
     loadDevices()
@@ -175,7 +182,7 @@ export default function Devices() {
   async function handleApprove(device) {
     try {
       await api.devices.approve(device.serial_number)
-      showToast(`${device.name || device.serial_number} approved`)
+      showToast(t('devices.approved_toast', { device: device.name || device.serial_number }))
       loadDevices()
     } catch (err) {
       showToast(err.message, 'error')
@@ -185,7 +192,7 @@ export default function Devices() {
   async function handleReject(device) {
     try {
       await api.devices.reject(device.serial_number)
-      showToast(`${device.name || device.serial_number} rejected`)
+      showToast(t('devices.rejected_toast', { device: device.name || device.serial_number }))
       loadDevices()
     } catch (err) {
       showToast(err.message, 'error')
@@ -196,7 +203,7 @@ export default function Devices() {
     try {
       const window = open ? await api.devices.openPairing() : await api.devices.closePairing()
       setPairing(window)
-      showToast(open ? 'Pairing window open' : 'Pairing window closed')
+      showToast(open ? t('devices.pairing_opened') : t('devices.pairing_closed'))
       loadDevices()
     } catch (err) {
       showToast(err.message, 'error')
@@ -206,10 +213,10 @@ export default function Devices() {
   async function handleSave(formData) {
     if (modal.mode === 'create') {
       await api.devices.create(formData)
-      showToast('Device added')
+      showToast(t('devices.added'))
     } else {
       await api.devices.update(modal.device.serial_number, formData)
-      showToast('Device updated')
+      showToast(t('devices.updated'))
     }
     setModal(null)
     loadDevices()
@@ -217,23 +224,23 @@ export default function Devices() {
 
   async function handleSaveTimezone(timezone) {
     const updated = await api.devices.setTimezone(tzModal.serial_number, timezone)
-    showToast(`Timezone set to ${updated.timezone}`)
+    showToast(t('devices.timezone_set', { tz: updated.timezone }))
     setTzModal(null)
     loadDevices()
   }
 
   async function handleSaveProtocol(protocol) {
     const updated = await api.devices.setProtocol(protoModal.serial_number, protocol)
-    showToast(`Protocol set to ${updated.protocol}`)
+    showToast(t('devices.protocol_set', { protocol: updated.protocol }))
     setProtoModal(null)
     loadDevices()
   }
 
   async function handleDelete(device) {
-    if (!confirm(`Remove "${device.name || device.serial_number}"?`)) return
+    if (!confirm(t('devices.confirm_remove', { device: device.name || device.serial_number }))) return
     try {
       await api.devices.delete(device.serial_number)
-      showToast('Device removed')
+      showToast(t('devices.removed'))
       loadDevices()
     } catch (err) {
       showToast(err.message, 'error')
@@ -241,12 +248,7 @@ export default function Devices() {
   }
 
   async function handleSync(device, type) {
-    const labels = {
-      all: 'Sync All',
-      employees: 'Sync Employees',
-      attendance: 'Sync Attendance',
-      templates: 'Sync Templates',
-    }
+    const label = t(`devices.sync.${type}`)
     const calls = {
       all: () => api.devices.pull(device.serial_number),
       employees: () => api.devices.pullEmployees(device.serial_number),
@@ -274,31 +276,37 @@ export default function Devices() {
     // happened and that is what gets shown. Reporting "started" for work
     // that has only been enqueued is the thing this avoids.
     if (result?.status === 'queued' || pullKinds.length === 0) {
-      showToast(result?.message || `${labels[type]} done for ${name}`)
+      showToast(serverMessage(result, t('devices.sync_done', { label, device: name })))
       return
     }
     // "started" is all the server can honestly say at this point — the pull
     // is a background task. So say it, then watch the device row for what
     // the pull actually did and report THAT, in red if it failed. Before
     // this, a timed-out connect was visible only in the server log.
-    showToast(`${labels[type]} started for ${name}…`)
+    showToast(t('devices.sync_started', { label, device: name }))
     const outcomes = await waitForPullOutcomes(device.serial_number, pullKinds, device.pull_outcomes)
     loadDevices()
     if (!outcomes) {
-      showToast(`${labels[type]} on ${name}: no result after 3 minutes — check the server log`, 'error')
+      showToast(t('devices.sync_no_result', { label, device: name }), 'error')
       return
     }
     const failed = pullKinds.filter((k) => !outcomes[k].ok)
     if (failed.length > 0) {
       showToast(
-        `${labels[type]} failed on ${name} — ` +
-          failed.map((k) => `${PULL_KINDS[k]}: ${outcomes[k].detail}`).join('; '),
+        t('devices.sync_failed', {
+          label,
+          device: name,
+          details: failed.map((k) => `${pullKindLabel(k)}: ${outcomes[k].detail}`).join('; '),
+        }),
         'error'
       )
     } else {
       showToast(
-        `${labels[type]} done on ${name} — ` +
-          pullKinds.map((k) => outcomes[k].detail).join('; ')
+        t('devices.sync_done_details', {
+          label,
+          device: name,
+          details: pullKinds.map((k) => outcomes[k].detail).join('; '),
+        })
       )
     }
   }
@@ -316,8 +324,7 @@ export default function Devices() {
     try {
       const result = await api.devices.clearAttendance(device.serial_number)
       showToast(
-        result?.message ||
-          `Attendance cleared on ${device.name || device.serial_number}`
+        serverMessage(result, t('devices.attendance_cleared', { device: device.name || device.serial_number }))
       )
     } catch (err) {
       showToast(err.message, 'error')
@@ -328,8 +335,7 @@ export default function Devices() {
     try {
       const result = await api.devices.restart(device.serial_number)
       showToast(
-        result?.message ||
-          `${device.name || device.serial_number} is restarting`
+        serverMessage(result, t('devices.restarting', { device: device.name || device.serial_number }))
       )
     } catch (err) {
       showToast(err.message, 'error')
@@ -343,8 +349,7 @@ export default function Devices() {
       // returned because the door opened. On a queued unlock the honest
       // report is the server's, which says queued and states the delay.
       showToast(
-        result?.message ||
-          `Door unlocked on ${device.name || device.serial_number}`
+        serverMessage(result, t('devices.door_unlocked', { device: device.name || device.serial_number }))
       )
     } catch (err) {
       showToast(err.message, 'error')
@@ -361,78 +366,78 @@ export default function Devices() {
     const isAcc = (device.protocol || 'att') === 'acc'
 
     return [
-      { label: 'Sync All', onClick: () => handleSync(device, 'all') },
-      { label: 'Sync Employees', onClick: () => handleSync(device, 'employees') },
+      { label: t('devices.sync.all'), onClick: () => handleSync(device, 'all') },
+      { label: t('devices.sync.employees'), onClick: () => handleSync(device, 'employees') },
       isAcc
         ? {
-            label: 'Sync Attendance',
+            label: t('devices.sync.attendance'),
             disabled: true,
-            hint: 'Not applicable — this terminal pushes punches up by itself, including anything it buffered while offline.',
+            hint: t('devices.menu.sync_attendance_na'),
           }
-        : { label: 'Sync Attendance', onClick: () => handleSync(device, 'attendance') },
-      { label: 'Sync Templates', onClick: () => handleSync(device, 'templates') },
+        : { label: t('devices.sync.attendance'), onClick: () => handleSync(device, 'attendance') },
+      { label: t('devices.sync.templates'), onClick: () => handleSync(device, 'templates') },
       'divider',
-      { label: 'Manage Users', onClick: () => setDrawer({ type: 'users', device }) },
-      { label: 'Device Info', onClick: () => setDrawer({ type: 'info', device }) },
-      { label: 'Set Clock', onClick: () => setDrawer({ type: 'clock', device }) },
+      { label: t('devices.menu.manage_users'), onClick: () => setDrawer({ type: 'users', device }) },
+      { label: t('devices.menu.device_info'), onClick: () => setDrawer({ type: 'info', device }) },
+      { label: t('devices.menu.set_clock'), onClick: () => setDrawer({ type: 'clock', device }) },
       // No command in the access-control protocol addresses the screen, so
       // this is shown unavailable with the reason rather than left clickable
       // (it would open a drawer whose only possible outcome is a 501).
       isAcc
         ? {
-            label: 'Write LCD',
+            label: t('devices.menu.write_lcd'),
             disabled: true,
-            hint: 'Not available — the access-control protocol has no command for writing to the screen.',
+            hint: t('devices.menu.write_lcd_na'),
           }
-        : { label: 'Write LCD', onClick: () => setDrawer({ type: 'lcd', device }) },
+        : { label: t('devices.menu.write_lcd'), onClick: () => setDrawer({ type: 'lcd', device }) },
       // The door DOES work here, but it is not the same action it is on an
       // SDK device and the menu says so before it is clicked. See handleUnlock.
       isAcc
         ? {
-            label: 'Unlock Door',
+            label: t('devices.menu.unlock_door'),
             onClick: () => handleUnlock(device),
-            hint: 'Queued — the door opens when the terminal next polls, usually within ~10s, not instantly.',
+            hint: t('devices.menu.unlock_door_acc'),
           }
-        : { label: 'Unlock Door', onClick: () => handleUnlock(device) },
-      { label: 'Commands', onClick: () => setDrawer({ type: 'commands', device }) },
+        : { label: t('devices.menu.unlock_door'), onClick: () => handleUnlock(device) },
+      { label: t('devices.menu.commands'), onClick: () => setDrawer({ type: 'commands', device }) },
       'divider',
       {
-        label: 'Clear Attendance',
+        label: t('devices.menu.clear_attendance'),
         danger: true,
         onClick: () => confirmAction(
-          'Clear Attendance',
+          t('devices.menu.clear_attendance'),
           isAcc
-            ? `This will permanently wipe the access-control records held on the terminal. Records already synced to the database are kept. The command is queued and runs when the terminal next polls — nothing is deleted at the moment you confirm.`
-            : `This will permanently wipe attendance logs from the device memory. Records already synced to the database are kept.`,
+            ? t('devices.menu.clear_attendance_acc')
+            : t('devices.menu.clear_attendance_att'),
           () => { setPwConfirm(null); handleClearAttendance(device) }
         ),
       },
       {
-        label: 'Restart Device',
+        label: t('devices.menu.restart'),
         danger: true,
         onClick: () => confirmAction(
-          'Restart Device',
+          t('devices.menu.restart'),
           isAcc
-            ? `The terminal will reboot. The command is queued and runs when it next polls, so it will not restart at the moment you confirm. It goes offline briefly and reconnects automatically.`
-            : `The device will reboot. It will go offline briefly and reconnect automatically.`,
+            ? t('devices.menu.restart_acc')
+            : t('devices.menu.restart_att'),
           () => { setPwConfirm(null); handleRestart(device) }
         ),
       },
       'divider',
-      { label: 'Device Security', onClick: () => setDrawer({ type: 'security', device }) },
-      { label: 'Edit', onClick: () => setModal({ mode: 'edit', device }) },
-      { label: 'Delete', danger: true, onClick: () => handleDelete(device) },
+      { label: t('devices.menu.security'), onClick: () => setDrawer({ type: 'security', device }) },
+      { label: t('common.edit'), onClick: () => setModal({ mode: 'edit', device }) },
+      { label: t('common.delete'), danger: true, onClick: () => handleDelete(device) },
     ]
   }
 
   function formatDate(iso) {
     if (!iso) return '—'
-    return new Date(iso).toLocaleString()
+    return formatDateTime(iso)
   }
 
   function formatTime(iso) {
     if (!iso) return '—'
-    return new Date(iso).toLocaleTimeString()
+    return formatClock(iso)
   }
 
   const pendingDevices = devices.filter((d) => d.status === 'pending')
@@ -440,28 +445,28 @@ export default function Devices() {
   return (
     <>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold text-gray-900">Devices</h1>
+        <h1 className="text-xl font-semibold text-gray-900">{t('nav.devices')}</h1>
         <div className="flex items-center gap-3">
           {isAdmin && (
             pairing?.is_open ? (
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
-                  Pairing open until {formatTime(pairing.open_until)}
+                  {t('devices.pairing_open_until', { time: formatTime(pairing.open_until) })}
                 </span>
                 <button
                   onClick={() => handlePairing(false)}
                   className="border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3 py-2 rounded-lg transition-colors"
                 >
-                  Close Pairing
+                  {t('devices.close_pairing')}
                 </button>
               </div>
             ) : (
               <button
                 onClick={() => handlePairing(true)}
-                title="Briefly accept serials this server has never seen, so they can be approved"
+                title={t('devices.open_pairing_title')}
                 className="border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3 py-2 rounded-lg transition-colors"
               >
-                Open Pairing
+                {t('devices.open_pairing')}
               </button>
             )
           )}
@@ -469,7 +474,7 @@ export default function Devices() {
             onClick={() => setModal({ mode: 'create' })}
             className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
-            + Add Device
+            + {t('device_form.add_title')}
           </button>
         </div>
       </div>
@@ -477,9 +482,9 @@ export default function Devices() {
       {pendingDevices.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl mb-6">
           <div className="px-4 py-3 border-b border-amber-200">
-            <h2 className="text-sm font-semibold text-amber-900">Waiting for approval</h2>
+            <h2 className="text-sm font-semibold text-amber-900">{t('devices.waiting_approval')}</h2>
             <p className="text-xs text-amber-700 mt-0.5">
-              These serials contacted the server but push nothing until approved.
+              {t('devices.waiting_approval_hint')}
             </p>
           </div>
           <table className="w-full text-sm">
@@ -487,7 +492,7 @@ export default function Devices() {
               {pendingDevices.map((device) => (
                 <tr key={device.serial_number} className="border-b border-amber-100 last:border-0">
                   <td className="px-4 py-3 font-mono text-xs text-gray-700">{device.serial_number}</td>
-                  <td className="px-4 py-3 text-gray-500">from {device.last_ip || '—'}</td>
+                  <td className="px-4 py-3 text-gray-500">{t('devices.from_ip', { ip: device.last_ip || '—' })}</td>
                   <td className="px-4 py-3 text-gray-400 text-xs">{formatDate(device.last_seen || device.created_at)}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex gap-2 justify-end">
@@ -496,14 +501,14 @@ export default function Devices() {
                         disabled={!isAdmin}
                         className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
                       >
-                        Approve
+                        {t('devices.approve')}
                       </button>
                       <button
                         onClick={() => handleReject(device)}
                         disabled={!isAdmin}
                         className="border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
                       >
-                        Reject
+                        {t('devices.reject')}
                       </button>
                     </div>
                   </td>
@@ -521,12 +526,10 @@ export default function Devices() {
       {devices.some((d) => d.pending_revocations > 0) && (
         <div className="mb-4 border-2 border-red-300 bg-red-50 rounded-xl px-4 py-3">
           <p className="text-sm font-semibold text-red-800">
-            Access revocations are waiting to reach a door
+            {t('devices.revocations_banner_title')}
           </p>
           <p className="text-xs text-red-700 mt-1">
-            These people have been removed in the system but the terminal has
-            not collected and confirmed it, so they can still get in. A device
-            that is offline will not collect anything until it comes back.
+            {t('devices.revocations_banner_body')}
           </p>
           <ul className="mt-2 space-y-0.5">
             {devices
@@ -535,8 +538,8 @@ export default function Devices() {
                 <li key={d.serial_number} className="text-xs text-red-800">
                   <span className="font-medium">{d.name || d.serial_number}</span>
                   {' — '}
-                  {d.pending_revocations} outstanding
-                  {!d.is_online && ' · device is offline'}
+                  {t('devices.outstanding_count', { count: d.pending_revocations })}
+                  {!d.is_online && ` · ${t('devices.device_offline')}`}
                 </li>
               ))}
           </ul>
@@ -545,24 +548,24 @@ export default function Devices() {
 
       <div className="bg-white rounded-xl border border-gray-200">
         {loading ? (
-          <div className="p-12 text-center text-sm text-gray-400">Loading…</div>
+          <div className="p-12 text-center text-sm text-gray-400">{t('common.loading')}</div>
         ) : devices.length === 0 ? (
           <div className="p-12 text-center text-sm text-gray-400">
-            No devices registered yet. Add one to get started.
+            {t('devices.empty')}
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 [&>th:first-child]:rounded-tl-xl [&>th:last-child]:rounded-tr-xl">
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Name</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Serial</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Address</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Trust</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Timezone</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Protocol</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Last Seen</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Last Sync</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.name')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.serial')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.address')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.status')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.trust')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.timezone')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.protocol')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.last_seen')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('devices.col.last_sync')}</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -583,9 +586,7 @@ export default function Devices() {
                         it. */}
                     {device.pending_revocations > 0 && (
                       <span className="block mt-1 text-xs font-semibold text-red-700">
-                        {device.pending_revocations} revocation
-                        {device.pending_revocations > 1 ? 's' : ''} not confirmed
-                        at this door
+                        {t('devices.revocations_not_confirmed', { count: device.pending_revocations })}
                       </span>
                     )}
                   </td>
@@ -603,12 +604,12 @@ export default function Devices() {
                       {isAdmin && (
                         <button
                           onClick={() => setTzModal(device)}
-                          title="Change what this device's punch times mean"
-                          aria-label={`Change timezone for ${device.serial_number}`}
+                          title={t('devices.edit_timezone_title')}
+                          aria-label={t('devices.edit_timezone_aria', { sn: device.serial_number })}
                           data-testid={`edit-timezone-${device.serial_number}`}
                           className="text-xs text-blue-500 hover:text-blue-700 underline"
                         >
-                          Edit
+                          {t('common.edit')}
                         </button>
                       )}
                     </span>
@@ -622,22 +623,22 @@ export default function Devices() {
                         {device.protocol || 'att'}
                         {device.protocol_pinned && (
                           <span
-                            title="Manually set — pinned against automatic reclassification until the device sends contradicting evidence"
+                            title={t('devices.pinned_title')}
                             className="ml-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5"
                           >
-                            pinned
+                            {t('devices.pinned')}
                           </span>
                         )}
                       </span>
                       {isAdmin && (
                         <button
                           onClick={() => setProtoModal(device)}
-                          title="Correct which PUSH protocol this device is treated as speaking"
-                          aria-label={`Change protocol for ${device.serial_number}`}
+                          title={t('devices.edit_protocol_title')}
+                          aria-label={t('devices.edit_protocol_aria', { sn: device.serial_number })}
                           data-testid={`edit-protocol-${device.serial_number}`}
                           className="text-xs text-blue-500 hover:text-blue-700 underline"
                         >
-                          Edit
+                          {t('common.edit')}
                         </button>
                       )}
                     </span>

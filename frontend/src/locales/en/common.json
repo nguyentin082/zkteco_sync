@@ -1,0 +1,28 @@
+{
+  "loading": "Loading…",
+  "saving": "Saving…",
+  "logout": "Logout",
+  "language": "Language",
+  "language_names": {
+    "vi": "Tiếng Việt",
+    "en": "English"
+  },
+  "close": "Close",
+  "more_actions": "More actions",
+  "cancel": "Cancel",
+  "confirm": "Confirm",
+  "deleting": "Deleting…",
+  "save_changes": "Save Changes",
+  "update": "Update",
+  "clear": "Clear",
+  "save": "Save",
+  "select_all": "Select all",
+  "deselect_all": "Deselect all",
+  "cancelling": "Cancelling…",
+  "edit": "Edit",
+  "delete": "Delete",
+  "page_of": "Page {{page}} of {{total}}",
+  "prev": "Prev",
+  "next": "Next",
+  "no_results": "No results."
+}

@@ -1,23 +1,27 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { api } from '../api'
+import { formatDateTime } from '../format'
 import { useAuth } from '../auth'
 import KebabMenu from '../components/KebabMenu'
 
 const ROLES = ['admin', 'viewer']
 
 function RoleBadge({ role }) {
+  const { t } = useTranslation()
   return (
     <span
       className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
         role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'
       }`}
     >
-      {role}
+      {t(`users.roles.${role}`, { defaultValue: role })}
     </span>
   )
 }
 
 function StatusBadge({ active }) {
+  const { t } = useTranslation()
   return (
     <span
       className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -25,7 +29,7 @@ function StatusBadge({ active }) {
       }`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-green-500' : 'bg-gray-400'}`} />
-      {active ? 'Active' : 'Inactive'}
+      {active ? t('users.active') : t('users.inactive')}
     </span>
   )
 }
@@ -61,6 +65,7 @@ function Field({ label, required, hint, children }) {
 }
 
 function UserFormModal({ mode, user, isSelf, onSave, onClose }) {
+  const { t } = useTranslation()
   const isEdit = mode === 'edit'
   const [form, setForm] = useState({ username: '', full_name: '', password: '', role: 'viewer' })
   const [error, setError] = useState('')
@@ -97,14 +102,14 @@ function UserFormModal({ mode, user, isSelf, onSave, onClose }) {
       <div className="absolute inset-0 bg-black/40" />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-gray-900">{isEdit ? 'Edit User' : 'Add User'}</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{isEdit ? t('users.edit_title') : t('users.add_title')}</h2>
           <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             ✕
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Field label="Username" required>
+          <Field label={t('auth.username')} required>
             <input
               type="text"
               required
@@ -115,7 +120,7 @@ function UserFormModal({ mode, user, isSelf, onSave, onClose }) {
             />
           </Field>
 
-          <Field label="Full Name">
+          <Field label={t('users.full_name')}>
             <input
               type="text"
               value={form.full_name}
@@ -125,7 +130,7 @@ function UserFormModal({ mode, user, isSelf, onSave, onClose }) {
           </Field>
 
           {!isEdit && (
-            <Field label="Setup Password" required hint="The operator must change this on first sign-in.">
+            <Field label={t('users.setup_password')} required hint={t('users.setup_password_hint')}>
               <input
                 type="password"
                 required
@@ -137,7 +142,7 @@ function UserFormModal({ mode, user, isSelf, onSave, onClose }) {
             </Field>
           )}
 
-          <Field label="Role" required hint={isSelf ? 'You cannot change your own role.' : undefined}>
+          <Field label={t('users.role')} required hint={isSelf ? t('users.cannot_change_own_role') : undefined}>
             <select
               disabled={isSelf}
               value={form.role}
@@ -145,7 +150,7 @@ function UserFormModal({ mode, user, isSelf, onSave, onClose }) {
               className="input disabled:bg-gray-100 disabled:text-gray-400"
             >
               {ROLES.map((r) => (
-                <option key={r} value={r}>{r}</option>
+                <option key={r} value={r}>{t(`users.roles.${r}`)}</option>
               ))}
             </select>
           </Field>
@@ -167,7 +172,7 @@ function UserFormModal({ mode, user, isSelf, onSave, onClose }) {
               disabled={saving}
               className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
             >
-              {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Add User'}
+              {saving ? t('common.saving') : isEdit ? t('common.save_changes') : t('users.add_title')}
             </button>
           </div>
         </form>
@@ -177,6 +182,7 @@ function UserFormModal({ mode, user, isSelf, onSave, onClose }) {
 }
 
 function ResetPasswordModal({ user, onSave, onClose }) {
+  const { t } = useTranslation()
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -199,20 +205,22 @@ function ResetPasswordModal({ user, onSave, onClose }) {
       <div className="absolute inset-0 bg-black/40" />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-gray-900">Reset Password</h2>
+          <h2 className="text-base font-semibold text-gray-900">{t('users.reset_password')}</h2>
           <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             ✕
           </button>
         </div>
 
         <p className="text-sm text-gray-500 mb-4">
-          Sets a new setup password for <span className="font-medium text-gray-700">{user.username}</span>. They
-          will be forced to change it on their next sign-in, and any session of theirs that is live right now ends
-          immediately.
+          <Trans
+            i18nKey="users.reset_intro"
+            values={{ username: user.username }}
+            components={{ b: <span className="font-medium text-gray-700" /> }}
+          />
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Field label="New Password" required>
+          <Field label={t('auth.new_password')} required>
             <input
               type="password"
               required
@@ -241,7 +249,7 @@ function ResetPasswordModal({ user, onSave, onClose }) {
               disabled={saving}
               className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
             >
-              {saving ? 'Saving…' : 'Reset Password'}
+              {saving ? t('common.saving') : t('users.reset_password')}
             </button>
           </div>
         </form>
@@ -251,6 +259,7 @@ function ResetPasswordModal({ user, onSave, onClose }) {
 }
 
 export default function Users() {
+  const { t } = useTranslation()
   const { user: me } = useAuth()
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -265,11 +274,11 @@ export default function Users() {
     try {
       setUsers(await api.users.list())
     } catch (err) {
-      showToast(err.message || 'Failed to load users', 'error')
+      showToast(err.message || t('users.load_failed'), 'error')
     } finally {
       setLoading(false)
     }
-  }, [showToast])
+  }, [showToast, t])
 
   useEffect(() => {
     loadUsers()
@@ -278,10 +287,10 @@ export default function Users() {
   async function handleSave(formData) {
     if (modal.mode === 'create') {
       await api.users.create(formData)
-      showToast('User created')
+      showToast(t('users.created'))
     } else {
       await api.users.update(modal.user.id, formData)
-      showToast('User updated')
+      showToast(t('users.updated'))
     }
     setModal(null)
     loadUsers()
@@ -289,7 +298,7 @@ export default function Users() {
 
   async function handleResetPassword(newPassword) {
     await api.users.resetPassword(resetTarget.id, newPassword)
-    showToast(`Password reset for ${resetTarget.username}`)
+    showToast(t('users.password_reset_for', { username: resetTarget.username }))
     setResetTarget(null)
     loadUsers()
   }
@@ -297,7 +306,7 @@ export default function Users() {
   async function handleToggleActive(u) {
     try {
       await api.users.update(u.id, { is_active: !u.is_active })
-      showToast(u.is_active ? `${u.username} deactivated` : `${u.username} activated`)
+      showToast(u.is_active ? t('users.deactivated', { username: u.username }) : t('users.activated', { username: u.username }))
       loadUsers()
     } catch (err) {
       showToast(err.message, 'error')
@@ -305,10 +314,10 @@ export default function Users() {
   }
 
   async function handleDelete(u) {
-    if (!confirm(`Delete user "${u.username}"? This cannot be undone.`)) return
+    if (!confirm(t('users.confirm_delete', { username: u.username }))) return
     try {
       await api.users.delete(u.id)
-      showToast('User deleted')
+      showToast(t('users.deleted'))
       loadUsers()
     } catch (err) {
       showToast(err.message, 'error')
@@ -320,50 +329,50 @@ export default function Users() {
     // the only stable field we can compare a row against to know it's "you".
     const isSelf = u.username === me?.username
     return [
-      { label: 'Edit', onClick: () => setModal({ mode: 'edit', user: u }) },
-      { label: 'Reset Password', onClick: () => setResetTarget(u) },
+      { label: t('common.edit'), onClick: () => setModal({ mode: 'edit', user: u }) },
+      { label: t('users.reset_password'), onClick: () => setResetTarget(u) },
       {
-        label: u.is_active ? 'Deactivate' : 'Activate',
+        label: u.is_active ? t('users.deactivate') : t('users.activate'),
         danger: u.is_active,
         disabled: isSelf && u.is_active,
         onClick: () => handleToggleActive(u),
       },
       'divider',
-      { label: 'Delete', danger: true, disabled: isSelf, onClick: () => handleDelete(u) },
+      { label: t('common.delete'), danger: true, disabled: isSelf, onClick: () => handleDelete(u) },
     ]
   }
 
   function formatDate(iso) {
     if (!iso) return '—'
-    return new Date(iso).toLocaleString()
+    return formatDateTime(iso)
   }
 
   return (
     <>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold text-gray-900">Users</h1>
+        <h1 className="text-xl font-semibold text-gray-900">{t('nav.users')}</h1>
         <button
           onClick={() => setModal({ mode: 'create' })}
           className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
         >
-          + Add User
+          + {t('users.add_title')}
         </button>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200">
         {loading ? (
-          <div className="p-12 text-center text-sm text-gray-400">Loading…</div>
+          <div className="p-12 text-center text-sm text-gray-400">{t('common.loading')}</div>
         ) : users.length === 0 ? (
-          <div className="p-12 text-center text-sm text-gray-400">No operators yet.</div>
+          <div className="p-12 text-center text-sm text-gray-400">{t('users.empty')}</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 [&>th:first-child]:rounded-tl-xl [&>th:last-child]:rounded-tr-xl">
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Username</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Name</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Role</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Last Login</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('auth.username')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('users.name')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('users.role')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('users.status')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('users.last_login')}</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -375,7 +384,7 @@ export default function Users() {
                 >
                   <td className="px-4 py-3 font-medium text-gray-900">
                     {u.username}
-                    {u.username === me?.username && <span className="text-gray-400 font-normal"> (you)</span>}
+                    {u.username === me?.username && <span className="text-gray-400 font-normal"> ({t('users.you')})</span>}
                   </td>
                   <td className="px-4 py-3 text-gray-500">
                     {u.full_name || <span className="text-gray-400">—</span>}

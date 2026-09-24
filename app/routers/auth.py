@@ -7,7 +7,7 @@ a wrong password — a login form must not become a user-enumeration oracle.
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from app import audit, config
@@ -17,6 +17,7 @@ from app.models import User, UserSession
 from app.net import client_ip
 from app.schemas import ChangePasswordRequest, LoginRequest, PasswordVerify, SessionOut
 from app.security import generate_token, hash_password, hash_token, needs_rehash, verify_password
+from app.errors import AppError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -76,12 +77,12 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     # No user, or a disabled one: same answer as a wrong password.
     if not user or not user.is_active:
         audit.record(db, payload.username, "login_failure", ip=ip, detail="unknown or inactive account")
-        raise HTTPException(status_code=401, detail=_GENERIC_FAILURE)
+        raise AppError("auth.invalid_credentials", status_code=401, detail=_GENERIC_FAILURE)
 
     if user.locked_until and user.locked_until > _now():
         remaining = int((user.locked_until - _now()).total_seconds() // 60) + 1
         audit.record(db, user.username, "login_failure", ip=ip, detail="account locked")
-        raise HTTPException(
+        raise AppError("auth.locked", params={"minutes": remaining},
             status_code=423,
             detail=f"Account locked after too many failed attempts. Try again in {remaining} minute(s).",
         )
@@ -89,7 +90,7 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     if not verify_password(payload.password, user.password_hash):
         _register_failure(user, db)
         audit.record(db, user.username, "login_failure", ip=ip, detail="wrong password")
-        raise HTTPException(status_code=401, detail=_GENERIC_FAILURE)
+        raise AppError("auth.invalid_credentials", status_code=401, detail=_GENERIC_FAILURE)
 
     # Success — the lockout counter starts again from zero.
     user.failed_attempts = 0
@@ -149,15 +150,15 @@ def me(request: Request, user: User = Depends(current_user)):
 def change_password(payload: ChangePasswordRequest, request: Request,
                     db: Session = Depends(get_db), user: User = Depends(current_user)):
     if not verify_password(payload.current_password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Current password is incorrect")
+        raise AppError("auth.current_password_wrong", status_code=401, detail="Current password is incorrect")
 
     if len(payload.new_password) < _MIN_PASSWORD_LENGTH:
-        raise HTTPException(
+        raise AppError("auth.password_too_short", params={"min": _MIN_PASSWORD_LENGTH},
             status_code=400,
             detail=f"New password must be at least {_MIN_PASSWORD_LENGTH} characters",
         )
     if payload.new_password == payload.current_password:
-        raise HTTPException(status_code=400, detail="New password must differ from the current one")
+        raise AppError("auth.password_same", status_code=400, detail="New password must differ from the current one")
 
     user.password_hash = hash_password(payload.new_password)
     user.must_change_password = False
@@ -181,4 +182,4 @@ def verify(payload: PasswordVerify, user: User = Depends(require_auth)):
     """Re-authentication for destructive actions in the UI. Path and request
     shape are unchanged — PasswordConfirmModal.jsx posts {"password": "..."}."""
     if not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid password")
+        raise AppError("auth.invalid_password", status_code=401, detail="Invalid password")

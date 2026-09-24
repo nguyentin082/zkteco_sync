@@ -7,11 +7,14 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:i18n": "node scripts/check-i18n.mjs"
   },
   "dependencies": {
+    "i18next": "^26.4.2",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "react-i18next": "^17.0.15",
     "react-router-dom": "^7.14.1"
   },
   "devDependencies": {

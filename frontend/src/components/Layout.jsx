@@ -1,17 +1,20 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import Brand from './Brand'
+import LanguageSwitcher from './LanguageSwitcher'
 import { api } from '../api'
 import { useAuth } from '../auth'
 
 const tabs = [
-  { label: 'Devices', to: '/devices' },
-  { label: 'Employees', to: '/employees' },
-  { label: 'Attendance', to: '/attendance' },
-  { label: 'Settings', to: '/settings' },
-  { label: 'Users', to: '/users', adminOnly: true },
+  { key: 'devices', to: '/devices' },
+  { key: 'employees', to: '/employees' },
+  { key: 'attendance', to: '/attendance' },
+  { key: 'settings', to: '/settings' },
+  { key: 'users', to: '/users', adminOnly: true },
 ]
 
 export default function Layout() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { user, refresh } = useAuth()
   const visibleTabs = tabs.filter((tab) => !tab.adminOnly || user?.role === 'admin')
@@ -34,6 +37,7 @@ export default function Layout() {
           <div className="flex items-center justify-between h-14">
             <Brand nameClassName="font-semibold text-gray-900" />
             <div className="flex items-center gap-4">
+              <LanguageSwitcher />
               <span className="text-sm text-gray-500">{user?.username}</span>
               {/* The app's secondary button in red: signing out is a leaving
                   action, and this one sits on every page, so it is outlined
@@ -43,7 +47,7 @@ export default function Layout() {
                 onClick={logout}
                 className="px-3 py-1.5 rounded-lg border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
               >
-                Logout
+                {t('common.logout')}
               </button>
             </div>
           </div>
@@ -62,7 +66,7 @@ export default function Layout() {
                   }`
                 }
               >
-                {tab.label}
+                {t(`nav.${tab.key}`)}
               </NavLink>
             ))}
           </nav>

@@ -1,0 +1,20 @@
+{
+  "allowlist_updated": "IP allowlist updated",
+  "key_cleared": "Comm key cleared",
+  "key_set_toast": "Comm key set",
+  "key_invalid": "Enter a whole number (0 or greater)",
+  "title": "Device Security",
+  "comm_key": "Comm Key",
+  "comm_key_help": "Authenticates the server to the device on TCP 4370. Once set it is never shown again — only whether one is configured.",
+  "is_set": "Set",
+  "not_set": "Not set",
+  "change": "Change",
+  "set_key": "Set key",
+  "new_key": "New comm key",
+  "restrict_intro": "Restrict <mono>{{sn}}</mono> to pushing attendance only from these addresses. Leave the check off for sites on a dynamic IP.",
+  "last_push_from": "Last push seen from",
+  "add_address": "Add this address",
+  "allowed_cidrs": "Allowed CIDRs",
+  "cidrs_help": "Comma separated. A bare address means that address only.",
+  "enforce": "Enforce this allowlist"
+}

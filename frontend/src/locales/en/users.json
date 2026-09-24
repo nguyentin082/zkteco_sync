@@ -1,0 +1,32 @@
+{
+  "roles": {
+    "admin": "admin",
+    "viewer": "viewer"
+  },
+  "active": "Active",
+  "inactive": "Inactive",
+  "edit_title": "Edit User",
+  "add_title": "Add User",
+  "full_name": "Full Name",
+  "setup_password": "Setup Password",
+  "setup_password_hint": "The operator must change this on first sign-in.",
+  "role": "Role",
+  "cannot_change_own_role": "You cannot change your own role.",
+  "reset_password": "Reset Password",
+  "reset_intro": "Sets a new setup password for <b>{{username}}</b>. They will be forced to change it on their next sign-in, and any session of theirs that is live right now ends immediately.",
+  "load_failed": "Failed to load users",
+  "created": "User created",
+  "updated": "User updated",
+  "password_reset_for": "Password reset for {{username}}",
+  "deactivated": "{{username}} deactivated",
+  "activated": "{{username}} activated",
+  "confirm_delete": "Delete user \"{{username}}\"? This cannot be undone.",
+  "deleted": "User deleted",
+  "deactivate": "Deactivate",
+  "activate": "Activate",
+  "empty": "No operators yet.",
+  "name": "Name",
+  "status": "Status",
+  "last_login": "Last Login",
+  "you": "you"
+}

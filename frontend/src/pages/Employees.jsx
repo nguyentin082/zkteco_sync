@@ -1,12 +1,15 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
+import { serverMessage } from '../i18n'
 import { api } from '../api'
+import { formatDate } from '../format'
 import { useAuth } from '../auth'
 import RevocationCard from '../components/RevocationCard'
 import DeleteEmployeeModal from '../components/DeleteEmployeeModal'
 import HandsDiagram from '../components/HandsDiagram'
-import { FINGER_NAMES } from '../fingers'
+import { fingerName } from '../fingers'
 
-const PRIVILEGE_LABELS = { 0: 'User', 2: 'Enroller', 14: 'Admin' }
+const PRIVILEGE_CODES = [0, 2, 14]
 
 // A queued command names its subject in a `Pin=` field, TAB-separated from the
 // rest (§3.8). Matched field by field rather than by substring, so PIN 9001
@@ -19,10 +22,7 @@ function commandIsAbout(command, userId) {
 
 // What a row in the outbox actually means, in the operator's words. `pending`
 // is not a failure: the device has simply not polled yet.
-const COMMAND_STATE = {
-  pending: 'Waiting for the device to poll',
-  sent: 'Delivered — waiting for the device to confirm',
-}
+const COMMAND_STATES = ['pending', 'sent']
 
 // A revocation, as opposed to a push. Everywhere else in this app a queued
 // command means "not there yet"; here it means "still able to open that
@@ -71,7 +71,10 @@ function Avatar({ employee, size = 'md' }) {
 }
 
 function PrivilegeBadge({ privilege }) {
-  const label = PRIVILEGE_LABELS[privilege] || `Level ${privilege}`
+  const { t } = useTranslation()
+  const label = PRIVILEGE_CODES.includes(privilege)
+    ? t(`employees.privilege.${privilege}`)
+    : t('employees.privilege_level', { level: privilege })
   const style =
     privilege === 14
       ? 'bg-purple-100 text-purple-700'
@@ -136,6 +139,7 @@ function Field({ label, hint, children }) {
 // the PIN is the key every attendance record and every biometric hangs off,
 // so it is set once and never renamed.
 function EmployeeForm({ employee, onDone, onCancel }) {
+  const { t } = useTranslation()
   const editing = !!employee
   const [form, setForm] = useState({
     user_id: employee?.user_id || '',
@@ -176,19 +180,19 @@ function EmployeeForm({ employee, onDone, onCancel }) {
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <h2 className="text-lg font-semibold text-gray-900 mb-1">
-        {editing ? `Edit ${displayName(employee)}` : 'New employee'}
+        {editing ? t('employees.edit_title', { name: displayName(employee) }) : t('employees.new_employee')}
       </h2>
       <p className="text-sm text-gray-400 mb-5">
         {editing
-          ? 'Saving changes here does not update any device. Push the person again to send the new details.'
-          : 'Adds the person to this server only. Push them to a device afterwards, then enrol their face or finger at that terminal.'}
+          ? t('employees.edit_intro')
+          : t('employees.create_intro')}
       </p>
 
       <form onSubmit={handleSubmit} className="max-w-md">
         {!editing && (
           <Field
-            label="User ID (PIN)"
-            hint="The number the terminal knows this person by. Cannot be changed later."
+            label={t('employees.user_id_pin')}
+            hint={t('employees.user_id_hint')}
           >
             <input
               className="input w-full text-sm"
@@ -200,7 +204,7 @@ function EmployeeForm({ employee, onDone, onCancel }) {
           </Field>
         )}
 
-        <Field label="Name" hint="Optional — a person with no name shows as their PIN.">
+        <Field label={t('employees.name')} hint={t('employees.name_hint')}>
           <input
             className="input w-full text-sm"
             value={form.name}
@@ -209,7 +213,7 @@ function EmployeeForm({ employee, onDone, onCancel }) {
           />
         </Field>
 
-        <Field label="Card number" hint="Optional. Leave empty for no card.">
+        <Field label={t('employees.card_number')} hint={t('employees.card_hint')}>
           <input
             className="input w-full text-sm"
             value={form.card}
@@ -219,17 +223,17 @@ function EmployeeForm({ employee, onDone, onCancel }) {
         </Field>
 
         <Field
-          label="Privilege"
-          hint="Administrator gives this person the terminal's own menus."
+          label={t('employees.privilege_label')}
+          hint={t('employees.privilege_hint')}
         >
           <select
             className="input w-full text-sm"
             value={form.privilege}
             onChange={(e) => set('privilege', e.target.value)}
           >
-            <option value={0}>User</option>
-            <option value={2}>Enroller</option>
-            <option value={14}>Administrator</option>
+            <option value={0}>{t('employees.privilege.0')}</option>
+            <option value={2}>{t('employees.privilege.2')}</option>
+            <option value={14}>{t('employees.privilege_admin_full')}</option>
           </select>
         </Field>
 
@@ -241,14 +245,14 @@ function EmployeeForm({ employee, onDone, onCancel }) {
             disabled={saving || (!editing && !form.user_id.trim())}
             className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
-            {saving ? 'Saving…' : editing ? 'Save changes' : 'Create employee'}
+            {saving ? t('common.saving') : editing ? t('common.save_changes') : t('employees.create_employee')}
           </button>
           <button
             type="button"
             onClick={onCancel}
             className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
         </div>
       </form>
@@ -257,6 +261,7 @@ function EmployeeForm({ employee, onDone, onCancel }) {
 }
 
 function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
+  const { t } = useTranslation()
   const [enrolledDevices, setEnrolledDevices] = useState(null)
   const [templates, setTemplates] = useState(null)
   const [biometrics, setBiometrics] = useState(null)
@@ -366,14 +371,14 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
     const byFinger = new Map()
     // Fingerprints only, and only where `no` is actually a finger index: a
     // visible-light face arrives as `type=9, no=0` and is not a left little.
-    for (const t of biometrics || []) {
-      if (t.type !== 1 || t.no < 0 || t.no > 9) continue
-      byFinger.set(t.no, { ...t, finger_id: t.no, origin: 'biodata' })
+    for (const tpl of biometrics || []) {
+      if (tpl.type !== 1 || tpl.no < 0 || tpl.no > 9) continue
+      byFinger.set(tpl.no, { ...tpl, finger_id: tpl.no, origin: 'biodata' })
     }
     // Second, so that when both tables hold the same finger the SDK row is the
     // one shown — it is the only one Delete can act on.
-    for (const t of templates || []) {
-      byFinger.set(t.finger_id, { ...t, origin: 'sdk' })
+    for (const tpl of templates || []) {
+      byFinger.set(tpl.finger_id, { ...tpl, origin: 'sdk' })
     }
     return [...byFinger.values()]
   }, [templates, biometrics])
@@ -381,7 +386,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
   if (!employee) {
     return (
       <div className="flex-1 flex items-center justify-center text-sm text-gray-400">
-        Select an employee to view details
+        {t('employees.select_prompt')}
       </div>
     )
   }
@@ -420,7 +425,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
   const bioIsQueued =
     allDevices.find((d) => d.serial_number === bioDeviceSn)?.protocol === 'acc'
   const sendableTo = (sn) =>
-    (biometrics || []).filter((t) => t.source_device_sn !== sn).length
+    (biometrics || []).filter((tpl) => tpl.source_device_sn !== sn).length
 
   async function handlePushToDevice(e) {
     e.preventDefault()
@@ -434,9 +439,9 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
       // commands on its next poll — about ten seconds — and confirms them
       // afterwards; claiming success here would be a guess.
       if (result?.status === 'queued') {
-        showToast(result.message || `Queued for ${pushDeviceSn} — not delivered yet`)
+        showToast(serverMessage(result, t('employees.queued_for', { sn: pushDeviceSn })))
       } else {
-        showToast(`Written to ${pushDeviceSn}`)
+        showToast(t('employees.written_to', { sn: pushDeviceSn }))
       }
       setPushDeviceSn('')
       reload()
@@ -456,14 +461,13 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
       const res = await api.devices.removeUser(sn, employee.user_id)
       if (res?.status === 'queued') {
         showToast(
-          res.message ||
-            `Revocation queued for ${sn} — NOT yet confirmed at the door`,
+          serverMessage(res, t('employees.revocation_queued', { sn })),
           'warn'
         )
       } else if (res?.status === 'withdrawn') {
-        showToast(res.message || `Undelivered push to ${sn} withdrawn`)
+        showToast(serverMessage(res, t('employees.push_withdrawn', { sn })))
       } else {
-        showToast(`Removed from ${sn} — the device confirmed it`)
+        showToast(t('employees.removed_from', { sn }))
       }
       reload()
     } catch (err) {
@@ -478,7 +482,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
   // BOTH `DATA DELETE` commands atomically; there is no per-command cancel
   // in this panel to accidentally leave half a revocation behind.
   function handleRevocationCancelled(res) {
-    showToast(res?.message || 'Revocation cancelled')
+    showToast(serverMessage(res, t('commands.revocation_cancelled')))
     reload()
   }
 
@@ -495,9 +499,9 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
     try {
       const res = await api.devices.pushTemplates(sn, employee.user_id)
       if (res?.status === 'queued') {
-        showToast(res.message || `Queued for ${sn} — not delivered yet`)
+        showToast(serverMessage(res, t('employees.queued_for', { sn })))
       } else {
-        showToast(`${res.templates_pushed} template(s) written to ${sn}`)
+        showToast(t('employees.templates_written', { count: res.templates_pushed, sn }))
       }
       reload()
     } catch (err) {
@@ -514,9 +518,9 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
     try {
       const res = await api.devices.pushTemplates(bioDeviceSn, employee.user_id)
       if (res?.status === 'queued') {
-        showToast(res.message || `Queued for ${bioDeviceSn} — not delivered yet`)
+        showToast(serverMessage(res, t('employees.queued_for', { sn: bioDeviceSn })))
       } else {
-        showToast(`${res.templates_pushed} template(s) written to ${bioDeviceSn}`)
+        showToast(t('employees.templates_written', { count: res.templates_pushed, sn: bioDeviceSn }))
       }
       setBioDeviceSn('')
       reload()
@@ -533,7 +537,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
     setEnrolling(true)
     try {
       await api.devices.enrollUser(enrollDeviceSn, employee.user_id, selectedFinger)
-      showToast(`Enrollment started — ask the person to scan their ${FINGER_NAMES[selectedFinger].toLowerCase()} on the device`)
+      showToast(t('employees.enroll_started', { finger: fingerName(selectedFinger).toLowerCase() }))
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
@@ -548,7 +552,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
   async function handleDeleteConfirmed() {
     const res = await api.employees.delete(employee.user_id)
     setShowDeleteModal(false)
-    showToast(res?.message || `${employee.user_id} deleted`)
+    showToast(serverMessage(res, t('employees.deleted', { user_id: employee.user_id })))
     onDeleted(employee.user_id)
   }
 
@@ -565,10 +569,8 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
     if (!sn) {
       showToast(
         (enrolledDevices || []).length
-          ? 'This person is only on access-control terminals, which have no ' +
-            'command for deleting one biometric. Remove them from the door ' +
-            'instead — that is what removes their templates.'
-          : 'Employee must be enrolled on at least one device to delete a template',
+          ? t('employees.delete_template_acc_only')
+          : t('employees.delete_template_needs_device'),
         'error'
       )
       return
@@ -576,7 +578,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
     setBusyTemplate((b) => ({ ...b, [fingerId]: true }))
     try {
       await api.devices.deleteTemplate(sn, employee.user_id, fingerId)
-      showToast(`${FINGER_NAMES[fingerId]} template deleted`)
+      showToast(t('employees.template_deleted', { finger: fingerName(fingerId) }))
       reload()
     } catch (err) {
       showToast(err.message, 'error')
@@ -598,7 +600,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
 
       {/* Profile */}
       <Section
-        title="Profile"
+        title={t('employees.profile')}
         action={
           isAdmin && (
             <div className="flex gap-1">
@@ -606,13 +608,13 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                 onClick={() => onEdit(employee)}
                 className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
               >
-                Edit
+                {t('common.edit')}
               </button>
               <button
                 onClick={() => setShowDeleteModal(true)}
                 className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 transition-colors"
               >
-                Delete
+                {t('common.delete')}
               </button>
             </div>
           )
@@ -620,11 +622,11 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
       >
         <div className="bg-gray-50 rounded-lg px-4 divide-y divide-gray-100">
           {[
-            ['Name', employee.name || '—'],
-            ['User ID', <span key="uid" className="font-mono text-xs">{employee.user_id}</span>],
-            ['Card', employee.card && employee.card !== '0' ? employee.card : '—'],
-            ['Privilege', <PrivilegeBadge key="priv" privilege={employee.privilege} />],
-            ['Added', new Date(employee.created_at).toLocaleDateString()],
+            [t('employees.name'), employee.name || '—'],
+            [t('employees.user_id'), <span key="uid" className="font-mono text-xs">{employee.user_id}</span>],
+            [t('employees.card'), employee.card && employee.card !== '0' ? employee.card : '—'],
+            [t('employees.privilege_label'), <PrivilegeBadge key="priv" privilege={employee.privilege} />],
+            [t('employees.added'), formatDate(employee.created_at)],
           ].map(([label, value]) => (
             <div key={label} className="flex justify-between items-center py-2.5 text-sm">
               <span className="text-gray-500">{label}</span>
@@ -649,8 +651,8 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
         <Section
           title={
             blockingSns.size > 0
-              ? 'Revoked in the system — not yet confirmed at the door'
-              : 'Revoked — finishing up at the door'
+              ? t('employees.revoked_title_open')
+              : t('employees.revoked_title_finishing')
           }
         >
           <div
@@ -666,18 +668,9 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
               }`}
             >
               {blockingSns.size > 0 ? (
-                <>
-                  This person can still open the door
-                  {blockingSns.size > 1 ? 's' : ''} below. The removal has been
-                  queued but the terminal has not collected and confirmed it yet
-                  — if it is offline, it will not until it comes back.
-                </>
+                t('employees.revoked_open_body', { count: blockingSns.size })
               ) : (
-                <>
-                  The terminal has confirmed this person's removal, so they can
-                  no longer be recognised there. What is left below is the
-                  separate door-permission record being cleared as well.
-                </>
+                t('employees.revoked_finishing_body')
               )}
             </p>
             {/* One card per revocation (E13) — grouped server-side by
@@ -698,7 +691,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                     title={deviceName || group.device_sn}
                     cancelLabel={
                       isAdmin && group.still_open
-                        ? 'Cancel revocation — let them keep this door'
+                        ? t('employees.cancel_revocation')
                         : null
                     }
                     onCancelled={handleRevocationCancelled}
@@ -715,10 +708,9 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
           it collects its commands on its own schedule, so this section is the
           honest state between "pushed" and "on the device". */}
       {pushesQueued.length > 0 && (
-        <Section title="Queued for delivery">
+        <Section title={t('employees.queued_title')}>
           <p className="text-xs text-gray-400 mb-2">
-            Not on the device yet. Each terminal collects one command per poll
-            (about every 10 seconds) and confirms it afterwards.
+            {t('employees.queued_body')}
           </p>
           <div className="space-y-2">
             {pushesQueued.map((row) => {
@@ -731,12 +723,12 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                       {deviceName || row.device_sn}
                     </p>
                     <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                      {row.status === 'sent' ? 'Awaiting confirmation' : 'Queued'}
+                      {row.status === 'sent' ? t('employees.awaiting_confirmation') : t('employees.queued')}
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    {COMMAND_STATE[row.status] || row.status}
-                    {row.attempts > 0 && ` · attempt ${row.attempts}`}
+                    {COMMAND_STATES.includes(row.status) ? t(`employees.command_state.${row.status}`) : row.status}
+                    {row.attempts > 0 && ` · ${t('employees.attempt', { count: row.attempts })}`}
                   </p>
                   <p className="text-xs text-gray-400 font-mono mt-1 truncate">
                     {row.command.split('\t')[0]}
@@ -753,7 +745,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
           state the operator most needs to see, because the person will simply
           be unrecognised at that door and nothing else will say so. */}
       {refused.length > 0 && (
-        <Section title="Refused or not delivered">
+        <Section title={t('employees.refused_title')}>
           <div className="space-y-2">
             {refused.map((row) => {
               const deviceName =
@@ -793,33 +785,20 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                   </p>
                   <p className="text-xs text-red-700 mt-1">
                     {failedRevocation
-                      ? 'ACCESS NOT REVOKED. This terminal never confirmed the ' +
-                        'removal, so this person may still be able to open this ' +
-                        'door. Check the device directly. ' +
-                        (unconfirmed
-                          ? 'The terminal did answer, with a code this system ' +
-                            'cannot read — that is not a refusal and not a ' +
-                            'confirmation. '
-                          : '') +
+                      ? t('employees.refused.access_not_revoked') + ' ' +
+                        (unconfirmed ? t('employees.refused.unreadable_answer') + ' ' : '') +
                         (row.last_error || '')
                       : isAuthorizeDelete && !cancelled
-                      ? 'The terminal did not remove the door permission record. ' +
-                        'Harmless if the user record itself was removed above — ' +
-                        'the person is gone either way — but worth checking if ' +
-                        'it was not.'
+                      ? t('employees.refused.authorize_not_removed')
                       : withdrawn
-                      ? row.last_error ||
-                        'Never delivered — the server gave up on this command.'
+                      ? row.last_error || t('employees.refused.never_delivered')
                       : unconfirmed
-                      ? 'The terminal answered with a code this system cannot ' +
-                        'read, so this was neither confirmed nor refused — it ' +
-                        'may have worked. Check the device before assuming ' +
-                        'either way, or send it again.'
+                      ? t('employees.refused.unconfirmed')
                       : isDoorPermission
-                      ? 'The door permission was refused. This person can be recognised by the terminal and will still not be let through.'
+                      ? t('employees.refused.door_permission')
                       : isBiometric
-                      ? 'The terminal refused this biometric. The person is not enrolled at this door and must enrol there in person, or be pushed again.'
-                      : 'The device refused this command.'}
+                      ? t('employees.refused.biometric')
+                      : t('employees.refused.generic')}
                     {row.return_code != null && ` (Return=${row.return_code})`}
                   </p>
                   <p className="text-xs text-gray-400 font-mono mt-1 truncate">
@@ -833,13 +812,13 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
       )}
 
       {/* Enrolled Devices */}
-      <Section title="Enrolled Devices">
+      <Section title={t('employees.enrolled_devices')}>
         {enrolledDevices === null ? (
-          <p className="text-sm text-gray-400">Loading…</p>
+          <p className="text-sm text-gray-400">{t('common.loading')}</p>
         ) : (
           <>
             {enrolledDevices.length === 0 ? (
-              <p className="text-sm text-gray-400 mb-3">Not enrolled on any device.</p>
+              <p className="text-sm text-gray-400 mb-3">{t('employees.not_enrolled_any')}</p>
             ) : (
               <div className="space-y-2 mb-3">
                 {enrolledDevices.map((d) => {
@@ -862,10 +841,10 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                         <p className="text-gray-800 font-medium truncate">{deviceName || d.device_sn}</p>
                         {revoking ? (
                           <p className="text-xs text-red-700 font-medium">
-                            Removal queued — still open at this door
+                            {t('employees.removal_queued')}
                           </p>
                         ) : (
-                          <p className="text-xs text-gray-400 font-mono">UID {d.uid}</p>
+                          <p className="text-xs text-gray-400 font-mono">{t('employees.uid', { uid: d.uid })}</p>
                         )}
                       </div>
                       {templates && templates.length > 0 && !revoking && (
@@ -874,12 +853,12 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                           disabled={!!busy}
                           className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50 disabled:opacity-40 transition-colors whitespace-nowrap"
                         >
-                          {busy === 'templates' ? 'Pushing…' : 'Push Templates'}
+                          {busy === 'templates' ? t('employees.pushing') : t('employees.push_templates')}
                         </button>
                       )}
                       {revoking ? (
                         <span className="text-xs text-red-600 font-semibold px-2 py-1 whitespace-nowrap">
-                          Revoking…
+                          {t('employees.revoking')}
                         </span>
                       ) : (
                         <button
@@ -887,7 +866,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                           disabled={!!busy}
                           className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 disabled:opacity-40 transition-colors"
                         >
-                          {busy === 'removing' ? 'Removing…' : 'Remove'}
+                          {busy === 'removing' ? t('employees.removing') : t('employees.remove')}
                         </button>
                       )}
                     </div>
@@ -904,7 +883,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                   onChange={(e) => setPushDeviceSn(e.target.value)}
                   className="input flex-1 text-sm"
                 >
-                  <option value="">Select device to enroll…</option>
+                  <option value="">{t('employees.select_device_enroll')}</option>
                   {unenrolledDevices.map((d) => (
                     <option key={d.serial_number} value={d.serial_number}>
                       {d.name || d.serial_number}
@@ -918,20 +897,17 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                 >
                   {pushing
                     ? pushIsQueued
-                      ? 'Queueing…'
-                      : 'Pushing…'
+                      ? t('employees.queueing')
+                      : t('employees.pushing')
                     : pushIsQueued
-                    ? 'Queue for Device'
-                    : 'Push to Device'}
+                    ? t('employees.queue_for_device')
+                    : t('employees.push_to_device')}
                 </button>
               </form>
             )}
             {pushIsQueued && (
               <p className="text-xs text-gray-400 mt-2">
-                This terminal is queued, not written directly: it collects the
-                person and their door permission on its next poll. They appear
-                above once the device confirms, and can enrol a face or finger
-                at the terminal from then on.
+                {t('employees.push_queued_note')}
               </p>
             )}
           </>
@@ -949,41 +925,39 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
           visible-light face, but nothing in this application branches on it,
           so nothing here translates it either — it is the device's data,
           presented as data. */}
-      <Section title="Captured Biometrics">
+      <Section title={t('employees.captured_biometrics')}>
         {biometrics === null ? (
-          <p className="text-sm text-gray-400">Loading…</p>
+          <p className="text-sm text-gray-400">{t('common.loading')}</p>
         ) : biometrics.length === 0 ? (
           <p className="text-sm text-gray-400">
-            Nothing captured yet. The person enrols a face or finger at a
-            terminal and the device uploads it here by itself.
+            {t('employees.nothing_captured')}
           </p>
         ) : (
           <>
             <div className="space-y-2 mb-3">
-              {biometrics.map((t) => {
+              {biometrics.map((tpl) => {
                 const sourceName = allDevices.find(
-                  (x) => x.serial_number === t.source_device_sn
+                  (x) => x.serial_number === tpl.source_device_sn
                 )?.name
                 return (
                   <div
-                    key={t.id}
+                    key={tpl.id}
                     className="bg-gray-50 rounded-lg px-3 py-2.5 flex items-center gap-2 text-sm"
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-gray-800 font-medium">
-                        Type {t.type} · No {t.no}
+                        {t('employees.bio_type_no', { type: tpl.type, no: tpl.no })}
                       </p>
                       <p className="text-xs text-gray-400 truncate">
-                        captured at {sourceName || t.source_device_sn} ·{' '}
-                        {t.tmp_bytes} bytes
+                        {t('employees.captured_at', { device: sourceName || tpl.source_device_sn, bytes: tpl.tmp_bytes })}
                       </p>
                     </div>
                     <span
                       className={`text-xs px-1.5 py-0.5 rounded-full ${
-                        t.valid ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
+                        tpl.valid ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
                       }`}
                     >
-                      {t.valid ? 'Valid' : 'Invalid'}
+                      {tpl.valid ? t('employees.valid') : t('employees.invalid')}
                     </span>
                   </div>
                 )
@@ -997,7 +971,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                   onChange={(e) => setBioDeviceSn(e.target.value)}
                   className="input flex-1 min-w-0 text-sm"
                 >
-                  <option value="">Copy to another door…</option>
+                  <option value="">{t('employees.copy_to_door')}</option>
                   {allDevices.map((d) => {
                     const count = sendableTo(d.serial_number)
                     return (
@@ -1007,7 +981,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                         disabled={count === 0}
                       >
                         {d.name || d.serial_number}
-                        {count === 0 ? ' — captured here' : ` — ${count}`}
+                        {count === 0 ? ` — ${t('employees.captured_here')}` : ` — ${count}`}
                       </option>
                     )
                   })}
@@ -1019,19 +993,17 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                 >
                   {pushingBio
                     ? bioIsQueued
-                      ? 'Queueing…'
-                      : 'Pushing…'
+                      ? t('employees.queueing')
+                      : t('employees.pushing')
                     : bioIsQueued
-                    ? 'Queue for Device'
-                    : 'Push to Device'}
+                    ? t('employees.queue_for_device')
+                    : t('employees.push_to_device')}
                 </button>
               </form>
             )}
             <p className="text-xs text-gray-400 mt-2">
-              A template is never sent back to the terminal that captured it.
-              {bioIsQueued
-                ? ' This terminal is queued, not written: the person and each template are one command per poll, so a face plus a finger is roughly half a minute, and nothing is delivered until the device collects it.'
-                : ''}
+              {t('employees.never_sent_back')}
+              {bioIsQueued ? ` ${t('employees.bio_queued_note')}` : ''}
             </p>
           </>
         )}
@@ -1043,17 +1015,17 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
           stored for it and offers the one action that makes sense — Delete
           for a stored finger, Enroll for an empty one. */}
       <Section
-        title="Fingerprint Templates"
+        title={t('employees.fingerprint_templates')}
         action={
           fingersReady && (
             <span className="text-xs text-gray-400">
-              {fingers.length} of 10 fingers
+              {t('employees.fingers_of_ten', { count: fingers.length })}
             </span>
           )
         }
       >
         {!fingersReady ? (
-          <p className="text-sm text-gray-400">Loading…</p>
+          <p className="text-sm text-gray-400">{t('common.loading')}</p>
         ) : (
           <>
             <HandsDiagram
@@ -1063,22 +1035,22 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
             />
             <div className="flex items-center justify-center gap-4 text-xs text-gray-400 mt-1 mb-3">
               <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" /> Enrolled
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" /> {t('employees.legend_enrolled')}
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-300 inline-block" /> Invalid
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-300 inline-block" /> {t('employees.invalid')}
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-gray-100 border border-gray-300 inline-block" /> Not enrolled
+                <span className="w-2.5 h-2.5 rounded-full bg-gray-100 border border-gray-300 inline-block" /> {t('employees.legend_not_enrolled')}
               </span>
             </div>
 
             {selectedFinger === null ? (
               <p className="text-xs text-gray-400 text-center">
-                Click a finger to see its template, delete it, or enrol it.
+                {t('employees.click_finger')}
               </p>
             ) : (() => {
-              const stored = fingers.find((t) => t.finger_id === selectedFinger)
+              const stored = fingers.find((tpl) => tpl.finger_id === selectedFinger)
               const sourceName = stored && (
                 allDevices.find((x) => x.serial_number === stored.source_device_sn)?.name ||
                 stored.source_device_sn
@@ -1089,15 +1061,15 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                     <>
                       <div className="flex items-center gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-gray-800 font-medium">{FINGER_NAMES[selectedFinger]}</p>
-                          <p className="text-xs text-gray-400 truncate">from {sourceName}</p>
+                          <p className="text-gray-800 font-medium">{fingerName(selectedFinger)}</p>
+                          <p className="text-xs text-gray-400 truncate">{t('employees.from_device', { device: sourceName })}</p>
                         </div>
                         <span
                           className={`text-xs px-1.5 py-0.5 rounded-full ${
                             stored.valid ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
                           }`}
                         >
-                          {stored.valid ? 'Valid' : 'Invalid'}
+                          {stored.valid ? t('employees.valid') : t('employees.invalid')}
                         </span>
                         {/* Only an SDK template can be deleted one finger at a
                             time — that is the only protocol with a command for
@@ -1109,24 +1081,20 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                             disabled={busyTemplate[selectedFinger]}
                             className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 disabled:opacity-40 transition-colors"
                           >
-                            {busyTemplate[selectedFinger] ? '…' : 'Delete'}
+                            {busyTemplate[selectedFinger] ? '…' : t('common.delete')}
                           </button>
                         )}
                       </div>
                       {stored.origin === 'biodata' && (
                         <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">
-                          Held as a captured biometric (type {stored.type}, no{' '}
-                          {stored.no}) — uploaded by a terminal or restored from a
-                          ZKTime backup, and listed under Captured Biometrics. No
-                          command deletes a single one of those, so there is
-                          nothing to offer here.
+                          {t('employees.biodata_note', { type: stored.type, no: stored.no })}
                         </p>
                       )}
                     </>
                   ) : (
                     <>
-                      <p className="text-gray-800 font-medium">{FINGER_NAMES[selectedFinger]}</p>
-                      <p className="text-xs text-gray-400 mb-2">Not enrolled.</p>
+                      <p className="text-gray-800 font-medium">{fingerName(selectedFinger)}</p>
+                      <p className="text-xs text-gray-400 mb-2">{t('employees.not_enrolled')}</p>
                       {enrolledDevices && enrolledDevices.length > 0 ? (
                         <form onSubmit={handleEnroll} className="flex gap-2">
                           <select
@@ -1134,7 +1102,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                             onChange={(e) => setEnrollDeviceSn(e.target.value)}
                             className="input flex-1 min-w-0 text-sm"
                           >
-                            <option value="">Enrol on device…</option>
+                            <option value="">{t('employees.enrol_on_device')}</option>
                             {enrolledDevices.map((d) => {
                               const name = allDevices.find((x) => x.serial_number === d.device_sn)?.name
                               return (
@@ -1149,12 +1117,12 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                             disabled={!enrollDeviceSn || enrolling}
                             className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
                           >
-                            {enrolling ? 'Starting…' : 'Enroll'}
+                            {enrolling ? t('employees.starting') : t('employees.enroll')}
                           </button>
                         </form>
                       ) : (
                         <p className="text-xs text-gray-400">
-                          Push this person to a device first, then enrol the finger there.
+                          {t('employees.push_first')}
                         </p>
                       )}
                     </>
@@ -1186,6 +1154,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
 }
 
 export default function Employees() {
+  const { t } = useTranslation()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [employees, setEmployees] = useState([])
@@ -1242,7 +1211,7 @@ export default function Employees() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search employees…"
+            placeholder={t('employees.search')}
             className="input w-full text-sm"
           />
           {isAdmin && (
@@ -1250,16 +1219,16 @@ export default function Employees() {
               onClick={() => setEditing('create')}
               className="mt-2 w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
             >
-              New employee
+              {t('employees.new_employee')}
             </button>
           )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <p className="text-sm text-gray-400 text-center py-8">Loading…</p>
+            <p className="text-sm text-gray-400 text-center py-8">{t('common.loading')}</p>
           ) : filtered.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-8">No results.</p>
+            <p className="text-sm text-gray-400 text-center py-8">{t('common.no_results')}</p>
           ) : (
             filtered.map((emp) => (
               <button
@@ -1285,7 +1254,7 @@ export default function Employees() {
         </div>
 
         <div className="px-4 py-2 border-t border-gray-100 text-xs text-gray-400">
-          {employees.length} employee{employees.length !== 1 ? 's' : ''}
+          {t('employees.count', { count: employees.length })}
         </div>
       </div>
 

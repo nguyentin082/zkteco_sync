@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../api'
 import Drawer from './Drawer'
 
 export default function WriteLcdDrawer({ device, onClose, showToast }) {
+  const { t } = useTranslation()
   const [line, setLine] = useState(1)
   const [text, setText] = useState('')
   const [saving, setSaving] = useState(false)
@@ -15,7 +17,7 @@ export default function WriteLcdDrawer({ device, onClose, showToast }) {
     setSaving(true)
     try {
       await api.devices.writeLcd(device.serial_number, line, text)
-      showToast('LCD updated')
+      showToast(t('lcd.updated'))
       onClose()
     } catch (err) {
       setError(err.message)
@@ -29,7 +31,7 @@ export default function WriteLcdDrawer({ device, onClose, showToast }) {
     setClearing(true)
     try {
       await api.devices.clearLcd(device.serial_number)
-      showToast('LCD cleared')
+      showToast(t('lcd.cleared'))
       onClose()
     } catch (err) {
       setError(err.message)
@@ -39,10 +41,10 @@ export default function WriteLcdDrawer({ device, onClose, showToast }) {
   }
 
   return (
-    <Drawer title="Write LCD" onClose={onClose}>
+    <Drawer title={t('lcd.title')} onClose={onClose}>
       <form onSubmit={handleWrite} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Line</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{t('lcd.line')}</label>
           <input
             type="number"
             min={1}
@@ -54,14 +56,14 @@ export default function WriteLcdDrawer({ device, onClose, showToast }) {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Text</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{t('lcd.text')}</label>
           <input
             type="text"
             required
             maxLength={24}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Welcome"
+            placeholder={t('lcd.placeholder')}
             className="input w-full"
           />
         </div>
@@ -79,14 +81,14 @@ export default function WriteLcdDrawer({ device, onClose, showToast }) {
             disabled={clearing}
             className="flex-1 border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 text-sm font-medium py-2 rounded-lg transition-colors"
           >
-            {clearing ? 'Clearing…' : 'Clear LCD'}
+            {clearing ? t('lcd.clearing') : t('lcd.clear')}
           </button>
           <button
             type="submit"
             disabled={saving}
             className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
           >
-            {saving ? 'Writing…' : 'Write'}
+            {saving ? t('lcd.writing') : t('lcd.write')}
           </button>
         </div>
       </form>

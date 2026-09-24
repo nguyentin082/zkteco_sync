@@ -50,6 +50,7 @@ from app.models import Device, User
 from app.net import client_ip
 from app.services import zktime_backup, zktime_export
 from app.services.zktime_backup import ZKTimeBackupError
+from app.errors import AppError
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ def _stage_dir() -> str:
 
 def _staged_path(token: str) -> str:
     if not _TOKEN_RE.match(token or ""):
-        raise HTTPException(status_code=400, detail="Not a valid upload reference.")
+        raise AppError("backup.invalid_token", status_code=400, detail="Not a valid upload reference.")
     return os.path.join(_stage_dir(), f"{token}.db")
 
 
@@ -127,13 +128,13 @@ def _require_fresh(token: str) -> str:
     try:
         age = time.time() - os.path.getmtime(path)
     except OSError:
-        raise HTTPException(
+        raise AppError("backup.upload_gone",
             status_code=404,
             detail="That upload is no longer held on the server. Upload the file again.",
         )
     if age > config.BACKUP_STAGE_TTL_SECONDS:
         _discard(token)
-        raise HTTPException(
+        raise AppError("backup.upload_expired", params={"minutes": config.BACKUP_STAGE_TTL_SECONDS // 60},
             status_code=404,
             detail=(
                 "That upload expired and was deleted "
@@ -171,11 +172,11 @@ async def _stream_to_stage(request: Request) -> tuple:
     except Exception:
         _discard(token)
         log.exception("backup: upload failed while staging")
-        raise HTTPException(status_code=500, detail="The upload could not be saved.")
+        raise AppError("backup.upload_save_failed", status_code=500, detail="The upload could not be saved.")
 
     if size == 0:
         _discard(token)
-        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+        raise AppError("backup.upload_empty", status_code=400, detail="The uploaded file is empty.")
 
     return token, size
 
@@ -245,6 +246,8 @@ def _template_status(db: Session) -> dict:
     except ZKTimeBackupError as exc:
         status["usable"] = False
         status["problem"] = str(exc)
+        status["problem_code"] = exc.code
+        status["problem_params"] = exc.params
         return status
     try:
         status["preview"] = zktime_backup.inspect_backup(conn)
@@ -279,12 +282,12 @@ async def set_template(request: Request, admin: User = Depends(require_admin),
         zktime_backup.open_backup(path).close()
     except ZKTimeBackupError as exc:
         _discard(token)
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise AppError.wrap(exc, 400)
 
     saved = _save_template(path)
     _discard(token)
     if not saved:
-        raise HTTPException(
+        raise AppError("backup.template_write_failed", params={"path": config.BACKUP_TEMPLATE_PATH},
             status_code=500,
             detail=(
                 f"The template could not be written to {config.BACKUP_TEMPLATE_PATH}. "
@@ -334,14 +337,14 @@ async def upload_backup(request: Request, admin: User = Depends(require_admin),
         # A file that is not a backup is deleted now, not left to the TTL:
         # there is nothing an operator can do with it and no reason to keep it.
         _discard(token)
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise AppError.wrap(exc, 400)
 
     try:
         preview = zktime_backup.inspect_backup(conn)
     except Exception as exc:
         _discard(token)
         log.exception("backup upload: could not read staged database")
-        raise HTTPException(
+        raise AppError("backup.db_unreadable", params={"error": str(exc)},
             status_code=400,
             detail=f"The file opened as a database but could not be read: {exc}",
         )
@@ -423,7 +426,7 @@ def restore_backup(payload: RestoreRequest, request: Request,
     path = _require_fresh(payload.token)
 
     if not payload.parts:
-        raise HTTPException(
+        raise AppError("backup.nothing_selected", params={"parts": ", ".join(zktime_backup.PARTS)},
             status_code=400,
             detail="Nothing was selected to restore. Choose at least one of: "
                    + ", ".join(zktime_backup.PARTS),
@@ -432,7 +435,7 @@ def restore_backup(payload: RestoreRequest, request: Request,
     try:
         conn = zktime_backup.open_backup(path)
     except ZKTimeBackupError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise AppError.wrap(exc, 400)
 
     try:
         summary = zktime_backup.restore(
@@ -443,7 +446,7 @@ def restore_backup(payload: RestoreRequest, request: Request,
             created_by=admin.username,
         )
     except ZKTimeBackupError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise AppError.wrap(exc, 400)
     except Exception:
         # Each part commits its own batches, so a failure part-way leaves the
         # parts that finished in place. Saying so is the point: silently
@@ -452,7 +455,7 @@ def restore_backup(payload: RestoreRequest, request: Request,
         # is keyed and repeatable, but only if they know to check.
         db.rollback()
         log.exception("zktime restore failed for device %s", payload.device_sn)
-        raise HTTPException(
+        raise AppError("backup.restore_partial_failure",
             status_code=500,
             detail="The restore failed part-way through. Anything already "
                    "written has been kept — re-running the restore is safe, "
@@ -525,7 +528,7 @@ def build_export(payload: ExportRequest, request: Request,
     """
     template = config.BACKUP_TEMPLATE_PATH
     if not os.path.isfile(template):
-        raise HTTPException(
+        raise AppError("backup.no_template",
             status_code=409,
             detail=(
                 "No ZKTime backup is held as a template, and one is needed: "
@@ -543,10 +546,10 @@ def build_export(payload: ExportRequest, request: Request,
             db, template, out_path, prune_missing=payload.prune_missing
         )
     except ZKTimeBackupError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise AppError.wrap(exc, 400)
     except Exception:
         log.exception("zktime export failed")
-        raise HTTPException(
+        raise AppError("backup.export_failed",
             status_code=500,
             detail="The export could not be built. Nothing was written and "
                    "your uploaded template is untouched. Check the server log.",

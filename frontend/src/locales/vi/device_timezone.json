@@ -1,0 +1,9 @@
+{
+  "title": "Đổi múi giờ",
+  "intro": "<b>{{device}}</b> gửi giờ chấm công không kèm múi giờ. Mục này cho biết các giờ đó thuộc múi giờ nào.",
+  "timezone": "Múi giờ",
+  "current": "hiện tại {{tz}}",
+  "not_set": "chưa đặt",
+  "select": "Chọn múi giờ…",
+  "notice": "Khi lưu, toàn bộ bản ghi chấm công từ thiết bị này sẽ được gắn lại nhãn múi giờ. Bản thân giờ đã ghi không thay đổi — chỉ thay đổi múi giờ dùng để đọc chúng. Dùng mục này để sửa nhãn sai, không phải để ghi nhận thiết bị đã chuyển đi nơi khác."
+}

@@ -1,0 +1,13 @@
+{
+  "updated": "Clock updated",
+  "title": "Set Device Clock",
+  "current_time": "Current device time",
+  "acc_unreadable": "Not readable on an access-control terminal — the protocol has no command for asking it what time it holds. Setting the clock below works, and does not depend on knowing the current value.",
+  "acc_note_tz": "The clock is set to this terminal's own timezone ({{tz}}), so its display and the punches it reports stay consistent. The command is queued and applies when the terminal next polls.",
+  "acc_note": "The clock is set to this terminal's own timezone, so its display and the punches it reports stay consistent. The command is queued and applies when the terminal next polls.",
+  "sync_now": "Sync to server time (now)",
+  "custom": "Set custom time",
+  "date_time": "Date & Time",
+  "setting": "Setting…",
+  "submit": "Set Clock"
+}

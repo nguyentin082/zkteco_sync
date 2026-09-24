@@ -1,0 +1,12 @@
+{
+  "title": "Đổi giao thức",
+  "intro": "<b>{{device}}</b> thường được đặt giá trị này tự động theo thông tin thiết bị gửi lên. Chỉ dùng khi máy vừa được chuyển giữa chế độ máy chủ đám mây và máy chủ nội bộ.",
+  "protocol": "Giao thức",
+  "current_pinned": "hiện tại {{protocol}} (ghim thủ công)",
+  "current_auto": "hiện tại {{protocol}} (tự động)",
+  "options": {
+    "att": "Attendance PUSH (att, chấm công)",
+    "acc": "Security PUSH (acc, kiểm soát ra vào)"
+  },
+  "pin_notice": "Khi lưu, giá trị này sẽ được ghim: máy chủ ngừng tự động thay đổi nó cho đến khi chính thiết bị gửi bằng chứng rằng nó dùng giao thức khác (bắt tay mới, đẩy chấm công hoặc gọi đăng ký). Khi đó ghim sẽ được gỡ và thay đổi được ghi vào nhật ký kiểm tra — không bao giờ âm thầm."
+}

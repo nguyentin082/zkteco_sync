@@ -1,6 +1,26 @@
+import { translateError } from './i18n'
+
 // In dev Vite proxies /api → localhost:8000 (strips /api prefix)
 // In production the frontend is served by FastAPI on the same origin
 const BASE = import.meta.env.PROD ? '' : '/api'
+
+// A refused call. `message` is already in the UI's language (see
+// translateError), so callers keep rendering err.message as before; `code`,
+// `params` and the server's English `detail` ride along for anything that
+// needs to tell one refusal from another.
+export class ApiError extends Error {
+  constructor(status, data, fallbackCode) {
+    const body = data || {}
+    // The fallback only stands in when the server said nothing at all — its
+    // own English detail is still more specific than a generic sentence.
+    const code = body.code || (typeof body.detail === 'string' ? null : fallbackCode)
+    super(translateError(code, body.params, body.detail))
+    this.status = status
+    this.code = code || null
+    this.params = body.params || {}
+    this.detail = body.detail
+  }
+}
 
 // Auth rides on an HttpOnly session cookie the browser sets at login, so
 // no token is ever written to browser storage. The matching CSRF token lives in
@@ -44,7 +64,7 @@ async function request(method, path, body) {
   if (res.status === 204) return null
 
   const data = await res.json()
-  if (!res.ok) throw new Error(data.detail || 'Request failed')
+  if (!res.ok) throw new ApiError(res.status, data)
   return data
 }
 
@@ -67,14 +87,13 @@ async function download(path) {
   }
 
   if (!res.ok) {
-    let detail = 'Download failed'
+    let data = null
     try {
-      const data = await res.json()
-      detail = data.detail || detail
+      data = await res.json()
     } catch {
       // Not a JSON body — keep the generic message.
     }
-    throw new Error(detail)
+    throw new ApiError(res.status, data, 'common.download_failed')
   }
 
   const disposition = res.headers.get('Content-Disposition') || ''
@@ -165,11 +184,11 @@ async function upload(path, file) {
   // 413 is answered by the middleware as plain text, before any route runs,
   // so it has no JSON body to read a detail out of.
   if (res.status === 413) {
-    throw new Error('That file is larger than this server accepts for an upload.')
+    throw new ApiError(413, null, 'common.upload_too_large')
   }
 
   const data = await res.json()
-  if (!res.ok) throw new Error(data.detail || 'Upload failed')
+  if (!res.ok) throw new ApiError(res.status, data, 'common.upload_failed')
   return data
 }
 

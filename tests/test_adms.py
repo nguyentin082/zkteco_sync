@@ -8528,7 +8528,10 @@ class PullTransportRoutingTests(PullRoutingTestCase):
 
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json(),
-                         {"message": "Employee sync started", "device": self.ATT_SN})
+                         {"message": "Employee sync started",
+                          "message_code": "employee_sync_started",
+                          "message_params": {},
+                          "device": self.ATT_SN})
         self.assertEqual(seen, [("employees", self.ATT_SN)])
         self.assertEqual(self.outbox(), [])
 

@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import Brand from '../components/Brand'
+import LanguageSwitcher from '../components/LanguageSwitcher'
 
 export default function Login() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { refresh } = useAuth()
   const [form, setForm] = useState({ username: '', password: '' })
@@ -31,6 +34,9 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
       <div className="bg-white rounded-2xl shadow-lg w-full max-w-sm p-8">
+        <div className="flex justify-end -mt-4 -mr-4 mb-2">
+          <LanguageSwitcher />
+        </div>
         <div className="mb-8 text-center">
           {/* The same lockup as the header, one size up: whoever signs in
               here sees the header next, and the two must not disagree. */}
@@ -41,13 +47,13 @@ export default function Login() {
               nameClassName="text-xl font-semibold text-gray-900"
             />
           </h1>
-          <p className="text-sm text-gray-500 mt-2">Sign in to continue</p>
+          <p className="text-sm text-gray-500 mt-2">{t('auth.sign_in_to_continue')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Username
+              {t('auth.username')}
             </label>
             <input
               type="text"
@@ -61,7 +67,7 @@ export default function Login() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Password
+              {t('auth.password')}
             </label>
             <input
               type="password"
@@ -83,7 +89,7 @@ export default function Login() {
             disabled={loading}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-lg px-4 py-2 text-sm transition-colors"
           >
-            {loading ? 'Signing in…' : 'Sign in'}
+            {loading ? t('auth.signing_in') : t('auth.sign_in')}
           </button>
         </form>
       </div>

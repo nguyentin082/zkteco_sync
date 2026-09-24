@@ -1,7 +1,7 @@
 import base64
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from typing import List
@@ -19,6 +19,7 @@ from app.schemas import (
     EmployeeUpdate, FingerprintTemplateOut,
 )
 from app.services import employee_sync
+from app.errors import AppError, message
 
 log = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ def create_employee(
         )
     except ValueError as exc:
         # 409, not 400: the request is well-formed, the PIN is simply taken.
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise AppError.wrap(exc, 409)
 
     db.commit()
     db.refresh(emp)
@@ -80,7 +81,7 @@ def create_employee(
 def get_employee(user_id: str, db: Session = Depends(get_db)):
     emp = db.query(Employee).filter_by(user_id=user_id).first()
     if not emp:
-        raise HTTPException(status_code=404, detail="Employee not found")
+        raise AppError("employee.not_found", status_code=404, detail="Employee not found")
     return emp
 
 
@@ -104,7 +105,7 @@ def update_employee(
     """
     emp = db.query(Employee).filter_by(user_id=user_id).first()
     if not emp:
-        raise HTTPException(status_code=404, detail="Employee not found")
+        raise AppError("employee.not_found", status_code=404, detail="Employee not found")
 
     changed = employee_sync.apply_operator_edit(
         db, emp, **payload.model_dump(exclude_unset=True)
@@ -159,7 +160,7 @@ def delete_employee(
     """
     emp = db.query(Employee).filter_by(user_id=user_id).first()
     if not emp:
-        raise HTTPException(status_code=404, detail="Employee not found")
+        raise AppError("employee.not_found", status_code=404, detail="Employee not found")
 
     links = db.query(DeviceEmployee).filter_by(user_id=user_id).all()
     if links:
@@ -169,7 +170,7 @@ def delete_employee(
             for d in db.query(Device).filter(Device.serial_number.in_(serials)).all()
         }
         doors = [devices.get(sn) or sn for sn in serials]
-        raise HTTPException(
+        raise AppError("employee.still_enrolled", params={"user_id": user_id, "count": len(doors), "doors": ", ".join(doors)},
             status_code=409,
             detail=(
                 f"{user_id} is still enrolled on {len(doors)} door"
@@ -199,6 +200,7 @@ def delete_employee(
         "user_id": user_id,
         "status": "deleted",
         "cascaded": cascaded,
+        **message("employee_deleted", user_id=user_id),
         "message": (
             f"{user_id} removed from the system. Attendance history is kept "
             "— those rows are historical fact and already reached the HRM. "
@@ -212,14 +214,14 @@ def delete_employee(
 @router.get("/{user_id}/devices", response_model=List[DeviceEmployeeOut])
 def get_employee_devices(user_id: str, db: Session = Depends(get_db)):
     if not db.query(Employee).filter_by(user_id=user_id).first():
-        raise HTTPException(status_code=404, detail="Employee not found")
+        raise AppError("employee.not_found", status_code=404, detail="Employee not found")
     return db.query(DeviceEmployee).filter_by(user_id=user_id).all()
 
 
 @router.get("/{user_id}/templates", response_model=List[FingerprintTemplateOut])
 def get_employee_templates(user_id: str, db: Session = Depends(get_db)):
     if not db.query(Employee).filter_by(user_id=user_id).first():
-        raise HTTPException(status_code=404, detail="Employee not found")
+        raise AppError("employee.not_found", status_code=404, detail="Employee not found")
     return db.query(FingerprintTemplate).filter_by(user_id=user_id).all()
 
 
@@ -237,7 +239,7 @@ def get_employee_biometrics(user_id: str, db: Session = Depends(get_db)):
     each of these will never be pushed back to.
     """
     if not db.query(Employee).filter_by(user_id=user_id).first():
-        raise HTTPException(status_code=404, detail="Employee not found")
+        raise AppError("employee.not_found", status_code=404, detail="Employee not found")
     rows = (
         db.query(BiometricTemplate)
         .filter_by(user_id=user_id)
@@ -281,7 +283,7 @@ def get_employee_photo(user_id: str, db: Session = Depends(get_db)):
     _PHOTO_SOURCE_PREFERENCE.
     """
     if not db.query(Employee).filter_by(user_id=user_id).first():
-        raise HTTPException(status_code=404, detail="Employee not found")
+        raise AppError("employee.not_found", status_code=404, detail="Employee not found")
 
     row = None
     for source in _PHOTO_SOURCE_PREFERENCE:
@@ -290,7 +292,7 @@ def get_employee_photo(user_id: str, db: Session = Depends(get_db)):
             break
 
     if row is None:
-        raise HTTPException(status_code=404, detail="No photo captured for this employee")
+        raise AppError("employee.no_photo", status_code=404, detail="No photo captured for this employee")
 
     try:
         image_bytes = base64.b64decode(row.content, validate=False)
@@ -299,7 +301,7 @@ def get_employee_photo(user_id: str, db: Session = Depends(get_db)):
             "employee photo for %s (source=%s): stored content is not decodable base64",
             user_id, row.source,
         )
-        raise HTTPException(status_code=404, detail="Stored photo is not decodable")
+        raise AppError("employee.photo_undecodable", status_code=404, detail="Stored photo is not decodable")
 
     return Response(
         content=image_bytes,

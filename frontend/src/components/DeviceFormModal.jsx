@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 
 const EMPTY_FORM = { serial_number: '', ip_address: '', port: 4370, name: '' }
 
 export default function DeviceFormModal({ mode, device, onSave, onClose }) {
+  const { t } = useTranslation()
   const isEdit = mode === 'edit'
   const [form, setForm] = useState(EMPTY_FORM)
   const [error, setError] = useState('')
@@ -48,7 +50,7 @@ export default function DeviceFormModal({ mode, device, onSave, onClose }) {
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-semibold text-gray-900">
-            {isEdit ? 'Edit Device' : 'Add Device'}
+            {isEdit ? t('device_form.edit_title') : t('device_form.add_title')}
           </h2>
           <button
             type="button"
@@ -60,7 +62,7 @@ export default function DeviceFormModal({ mode, device, onSave, onClose }) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Field label="Serial Number" required>
+          <Field label={t('device_form.serial_number')} required>
             <input
               type="text"
               required
@@ -72,7 +74,7 @@ export default function DeviceFormModal({ mode, device, onSave, onClose }) {
             />
           </Field>
 
-          <Field label="IP Address" required>
+          <Field label={t('device_form.ip_address')} required>
             <input
               type="text"
               required
@@ -83,7 +85,7 @@ export default function DeviceFormModal({ mode, device, onSave, onClose }) {
             />
           </Field>
 
-          <Field label="Port" required>
+          <Field label={t('device_form.port')} required>
             <input
               type="number"
               required
@@ -93,12 +95,12 @@ export default function DeviceFormModal({ mode, device, onSave, onClose }) {
             />
           </Field>
 
-          <Field label="Name">
+          <Field label={t('device_form.name')}>
             <input
               type="text"
               value={form.name}
               onChange={(e) => set('name', e.target.value)}
-              placeholder="Door Access (optional)"
+              placeholder={t('device_form.name_placeholder')}
               className="input"
             />
           </Field>
@@ -115,14 +117,14 @@ export default function DeviceFormModal({ mode, device, onSave, onClose }) {
               onClick={onClose}
               className="flex-1 border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium py-2 rounded-lg transition-colors"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={saving}
               className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
             >
-              {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Add Device'}
+              {saving ? t('common.saving') : isEdit ? t('common.save_changes') : t('device_form.add_title')}
             </button>
           </div>
         </form>

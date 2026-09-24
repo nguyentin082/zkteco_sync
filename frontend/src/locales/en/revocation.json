@@ -1,0 +1,21 @@
+{
+  "role": {
+    "user": "user record",
+    "userauthorize": "door permission"
+  },
+  "line": {
+    "never_queued": "{{name}}: never queued",
+    "delivered_waiting": "{{name}}: delivered to the device — waiting for it to confirm",
+    "waiting_poll": "{{name}}: waiting for the device to poll",
+    "confirmed": "{{name}}: confirmed by the device",
+    "refused": "{{name}}: refused by the device (Return={{code}})",
+    "unconfirmed": "{{name}}: answered with a code this system cannot read (Return={{code}}) — not a refusal, not a confirmation",
+    "cancelled": "{{name}}: cancelled before delivery",
+    "gave_up": "{{name}}: never acknowledged — the server gave up on it"
+  },
+  "still_open": "Still open",
+  "clearing_up": "Clearing up",
+  "handed_over": "Handed to the device — waiting for it to confirm the removal",
+  "waiting_poll": "Waiting for the device to poll. Nothing has reached it yet.",
+  "outstanding_for": "outstanding {{time}}"
+}

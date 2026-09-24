@@ -1,0 +1,111 @@
+{
+  "common": {
+    "request_failed": "Request failed",
+    "download_failed": "Download failed",
+    "upload_failed": "Upload failed",
+    "upload_too_large": "That file is larger than this server accepts for an upload.",
+    "validation": "Some of the values sent are missing or invalid."
+  },
+  "auth": {
+    "not_authenticated": "Not signed in",
+    "session_expired": "Session expired",
+    "csrf_invalid": "CSRF token missing or invalid",
+    "password_change_required": "Password change required",
+    "admin_required": "Administrator privileges required",
+    "invalid_credentials": "Invalid username or password",
+    "locked": "Account locked after too many failed attempts. Try again in {{minutes}} minute(s).",
+    "current_password_wrong": "Current password is incorrect",
+    "password_too_short": "New password must be at least {{min}} characters",
+    "password_same": "New password must differ from the current one",
+    "invalid_password": "Invalid password"
+  },
+  "attendance": {
+    "range_inverted": "The end of the range is before its start. Pick a To date after the From date.",
+    "export_too_many": "{{total, number}} records match this filter, and an export is limited to {{max, number}}. Narrow the date range (one month at a time) and export again.",
+    "timesheet_too_many": "That range is {{days, number}} days for {{people, number}} people, which is {{rows, number}} timesheet rows, and an export is limited to {{max, number}}. Narrow the date range (one month at a time), or pick a single employee, and export again."
+  },
+  "employee": {
+    "not_found": "Employee not found",
+    "user_id_required": "A user ID (PIN) is required",
+    "user_id_taken": "User ID {{user_id}} already exists",
+    "still_enrolled": "{{user_id}} is still enrolled on {{count}} door(s): {{doors}}. Revoke them from each door first, and wait for the device to confirm the removal — deleting the record here while a door still holds the credential would leave an invisible way in with no record of it anywhere.",
+    "no_photo": "No photo captured for this employee",
+    "photo_undecodable": "Stored photo is not decodable"
+  },
+  "user": {
+    "not_found": "User not found",
+    "password_too_short": "Password must be at least {{min}} characters",
+    "username_exists": "Username already exists",
+    "cannot_demote_self": "You cannot demote or deactivate your own account.",
+    "last_admin_demote": "This is the last active admin — demoting or deactivating it would lock everyone out. Promote another user to admin first.",
+    "cannot_delete_self": "You cannot delete your own account.",
+    "last_admin_delete": "This is the last active admin — deleting it would lock everyone out. Promote another user to admin first."
+  },
+  "device": {
+    "not_found": "Device not found",
+    "already_registered": "Device already registered",
+    "invalid_cidr": "Not a valid CIDR or IP address: {{values}}",
+    "ip_check_needs_cidr": "Add at least one allowed CIDR before enabling the IP check",
+    "invalid_timezone": "'{{tz}}' is not a known IANA timezone name. Use a name from the tz database, e.g. Asia/Dubai.",
+    "sync_busy": "Another sync is already running on this device — wait for it to finish",
+    "acc_no_attendance_pull": "{{sn}} is an access-control terminal. Attendance is not pulled from an access-control terminal — it pushes each punch up by itself as it happens. Nothing was queued; punches from this device appear in Attendance without any action here.",
+    "connect_failed": "Could not connect to device",
+    "comm_key_refused": "Device refused the connection — the configured comm key is likely wrong",
+    "info_refresh_sdk": "{{sn}} is read live over the SDK every time Device Info is opened, so there is nothing to refresh — close and reopen it.",
+    "acc_no_time_read": "{{sn}} is an access-control terminal, and there is no command for asking one what time it thinks it is. Nothing was queued. Setting the clock does work — use Set Clock.",
+    "invalid_datetime": "Invalid datetime format — use ISO 8601",
+    "time_missing_value": "Provide sync=true or a dt value",
+    "acc_no_lock_read": "{{sn}} is an access-control terminal, and there is no command for asking one whether its door is locked. Nothing was queued and nothing was guessed at.",
+    "acc_no_lcd": "{{sn}} is an access-control terminal, and there is no command for writing to its screen. Nothing was queued.",
+    "user_not_enrolled": "User not enrolled on this device",
+    "user_not_enrolled_push_first": "User not enrolled on this device — push them first",
+    "user_not_on_device_push_first": "User not found on device — push them first"
+  },
+  "command": {
+    "not_found": "No outstanding command with that id on this device",
+    "already_concluded": "Already concluded by the device — nothing left to cancel",
+    "history_not_found": "No history row with that id on this device",
+    "retry_not_failed": "Only a failed command can be retried; this one was acknowledged"
+  },
+  "revocation": {
+    "pending": "A revocation for {{user_id}} on {{sn}} has not been confirmed by the device yet ({{count}} command(s) still queued: {{ids}}). Pushing now would queue an instruction that contradicts it. Wait for the terminal to collect the revocation, or cancel the revocation first — nothing was queued.",
+    "none_outstanding": "No outstanding revocation for {{user_id}} on {{sn}}"
+  },
+  "biometric": {
+    "none_captured": "No biometric templates captured for this person. They must enrol a face or finger at a terminal first — nothing was queued.",
+    "originals_on_device": "All {{count}} stored template(s) for this person were captured on {{sn}} itself, and {{sn}} still holds them. Sending this server's copy back would overwrite a live enrolment for no gain, so nothing was queued. (If the terminal has actually lost them, revoke the person from this door first; the same templates then become sendable.)",
+    "unsendable": "Stored template data cannot be put on the wire: {{reasons}} — nothing was queued.",
+    "acc_no_delete": "{{sn}} is an access-control terminal, and the PUSH protocol has no confirmed command for deleting one biometric on its own. Nothing was queued. To take this person's biometrics off this door, remove the person from it (Remove, on their Enrolled Devices list)."
+  },
+  "fingerprint": {
+    "none_in_db": "No fingerprint templates in the database for this employee"
+  },
+  "door": {
+    "not_integer": "Door must be a whole number",
+    "seconds_not_integer": "Seconds must be a whole number",
+    "out_of_range": "Door must be between {{min}} and {{max}}; door 0 means EVERY door on the controller and is never sent from here",
+    "latch_refused": "255 is not a 255-second unlock — in this protocol it latches the door open indefinitely. Use {{max}} or fewer seconds.",
+    "seconds_out_of_range": "Seconds must be between {{min}} and {{max}}; 0 is the immediate-close command, not an unlock"
+  },
+  "backup": {
+    "invalid_token": "Not a valid upload reference.",
+    "upload_gone": "That upload is no longer held on the server. Upload the file again.",
+    "upload_expired": "That upload expired and was deleted ({{minutes}} minutes after it arrived). Upload the file again.",
+    "upload_save_failed": "The upload could not be saved.",
+    "upload_empty": "The uploaded file is empty.",
+    "template_write_failed": "The template could not be written to {{path}}. Set BACKUP_DATA_DIR to a path the app can write to.",
+    "db_unreadable": "The file opened as a database but could not be read: {{error}}",
+    "nothing_selected": "Nothing was selected to restore. Choose at least one of: {{parts}}",
+    "restore_partial_failure": "The restore failed part-way through. Anything already written has been kept — re-running the restore is safe, it skips what is already there. Check the server log.",
+    "no_template": "No ZKTime backup is held as a template, and one is needed: most of a ZKTime database is its own configuration, which this app cannot generate. Restore a ZKTime backup, or upload one as the template, and Backup will work from then on.",
+    "export_failed": "The export could not be built. Nothing was written and your uploaded template is untouched. Check the server log.",
+    "file_missing": "The uploaded file is no longer available. Upload it again.",
+    "not_sqlite": "This is not a SQLite database. A ZKTime backup is the .db file ZKTime's own Backup button writes — not a .zip, .bak or .sql export.",
+    "open_failed": "The database could not be opened: {{error}}",
+    "corrupt": "The file starts like a SQLite database but cannot be read as one ({{error}}). It is most likely truncated or corrupt — check the copy completed, and try the backup again.",
+    "not_zktime": "This SQLite database is not a ZKTime backup — it has no {{tables}} table. Check you uploaded the file ZKTime's Backup button produced.",
+    "unknown_device": "No device with serial '{{sn}}' is registered here, and this backup holds no terminal with that serial either, so there is nothing to create it from. The file's terminal(s): {{terminals}}.",
+    "unknown_device_no_terminals": "No device with serial '{{sn}}' is registered here, and this backup names no terminal serial at all, so there is nothing to create it from.",
+    "unknown_parts": "Unknown restore part(s): {{parts}}"
+  }
+}

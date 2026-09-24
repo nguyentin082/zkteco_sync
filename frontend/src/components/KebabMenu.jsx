@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 
 function MenuItem({ label, onClick, danger, disabled, hint }) {
   // `hint` is rendered, not hovered: an action that is unavailable has to say
@@ -35,6 +36,7 @@ function Divider() {
 }
 
 export default function KebabMenu({ items }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -53,7 +55,7 @@ export default function KebabMenu({ items }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-        aria-label="More actions"
+        aria-label={t('common.more_actions')}
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
           <circle cx="8" cy="3" r="1.5" />

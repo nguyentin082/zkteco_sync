@@ -8,13 +8,14 @@ the X-CSRF-Token header, which script from another origin cannot read.
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Request, status
 from sqlalchemy.orm import Session
 
 from app import config
 from app.database import get_db
 from app.models import User, UserSession
 from app.security import constant_time_equals, hash_token
+from app.errors import AppError
 
 # Methods that change state and therefore need a CSRF token.
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -24,8 +25,8 @@ _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 _SLIDE_AFTER_SECONDS = 30
 
 
-def _unauthorised(detail: str = "Not authenticated") -> HTTPException:
-    return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
+def _unauthorised(detail: str = "Not authenticated", code: str = "auth.not_authenticated") -> AppError:
+    return AppError(code, status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
 
 
 def current_user(request: Request, db: Session = Depends(get_db)) -> User:
@@ -39,7 +40,7 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
 
     session = db.query(UserSession).filter_by(token_hash=hash_token(token)).first()
     if not session or session.revoked:
-        raise _unauthorised("Session expired")
+        raise _unauthorised("Session expired", "auth.session_expired")
 
     now = datetime.now(timezone.utc)
 
@@ -48,24 +49,24 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
     if session.expires_at <= now:
         session.revoked = True
         db.commit()
-        raise _unauthorised("Session expired")
+        raise _unauthorised("Session expired", "auth.session_expired")
 
     idle_deadline = session.last_seen_at + timedelta(minutes=config.SESSION_IDLE_MINUTES)
     if idle_deadline <= now:
         session.revoked = True
         db.commit()
-        raise _unauthorised("Session expired")
+        raise _unauthorised("Session expired", "auth.session_expired")
 
     user = db.query(User).filter_by(id=session.user_id).first()
     if not user or not user.is_active:
         session.revoked = True
         db.commit()
-        raise _unauthorised("Session expired")
+        raise _unauthorised("Session expired", "auth.session_expired")
 
     if request.method in _UNSAFE_METHODS:
         header = request.headers.get("X-CSRF-Token", "")
         if not constant_time_equals(header, session.csrf_token or ""):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF token missing or invalid")
+            raise AppError("auth.csrf_invalid", status_code=status.HTTP_403_FORBIDDEN, detail="CSRF token missing or invalid")
 
     if (now - session.last_seen_at).total_seconds() >= _SLIDE_AFTER_SECONDS:
         session.last_seen_at = now
@@ -84,7 +85,7 @@ def require_auth(user: User = Depends(current_user)) -> User:
     An account still carrying a forced password change may only reach the
     handful of /auth routes that let it change that password."""
     if user.must_change_password:
-        raise HTTPException(
+        raise AppError("auth.password_change_required",
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Password change required",
         )
@@ -94,7 +95,7 @@ def require_auth(user: User = Depends(current_user)) -> User:
 def require_admin(user: User = Depends(require_auth)) -> User:
     """Guard for routes a viewer must not reach."""
     if user.role != "admin":
-        raise HTTPException(
+        raise AppError("auth.admin_required",
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrator privileges required",
         )

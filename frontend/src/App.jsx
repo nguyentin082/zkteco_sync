@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { AuthProvider, useAuth } from './auth'
 import Login from './pages/Login'
 import ChangePassword from './pages/ChangePassword'
@@ -10,9 +11,10 @@ import Users from './pages/Users'
 import Layout from './components/Layout'
 
 function Loading() {
+  const { t } = useTranslation()
   return (
     <div className="min-h-screen flex items-center justify-center text-sm text-gray-500">
-      Loading…
+      {t('common.loading')}
     </div>
   )
 }

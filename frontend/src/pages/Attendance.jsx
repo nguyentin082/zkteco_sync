@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, saveBlob } from '../api'
+import { formatNumber } from '../format'
 
 const PAGE_SIZE = 50
 
@@ -8,21 +10,14 @@ const PAGE_SIZE = 50
 // for the rule. The half-record pair is amber rather than red because it is a
 // gap in the data and not an error — the person was here, the terminal only
 // caught them once.
-const DERIVED_LABELS = {
-  check_in: { label: 'Check In', style: 'bg-green-100 text-green-700' },
-  check_out: { label: 'Check Out', style: 'bg-blue-100 text-blue-700' },
-  interim: { label: 'Interim', style: 'bg-gray-100 text-gray-500' },
-  in_only: { label: 'Check In · no Out', style: 'bg-amber-100 text-amber-700' },
-  out_only: { label: 'Check Out · no In', style: 'bg-amber-100 text-amber-700' },
-}
-
-// The hint under the cursor, explaining where each label came from.
-const DERIVED_HINTS = {
-  check_in: 'Earliest punch of this day',
-  check_out: 'Latest punch of this day',
-  interim: 'Neither the first nor the last punch of this day',
-  in_only: 'The only punch of this day, in the first half of the shift — no check-out was recorded',
-  out_only: 'The only punch of this day, in the second half of the shift — no check-in was recorded',
+// Labels and hints (the hint under the cursor, explaining where each label
+// came from) live under attendance.derived.* / attendance.derived_hint.*.
+const DERIVED_STYLES = {
+  check_in: 'bg-green-100 text-green-700',
+  check_out: 'bg-blue-100 text-blue-700',
+  interim: 'bg-gray-100 text-gray-500',
+  in_only: 'bg-amber-100 text-amber-700',
+  out_only: 'bg-amber-100 text-amber-700',
 }
 
 // The device's own in/out codes. Kept only for the tooltip: on this
@@ -30,25 +25,23 @@ const DERIVED_HINTS = {
 // reads 1 — "check-out" — for essentially every record, which is why the
 // badge is derived from the clock instead. It is still shown, because an
 // operator has to be able to see what the terminal actually sent.
-const DEVICE_STATUS_LABELS = {
-  0: 'Check In',
-  1: 'Check Out',
-  2: 'Break Out',
-  3: 'Break In',
-  4: 'OT In',
-  5: 'OT Out',
-}
+const DEVICE_STATUS_CODES = [0, 1, 2, 3, 4, 5]
 
 function StatusBadge({ derived, status }) {
-  const s =
-    DERIVED_LABELS[derived] ||
-    // No derived label: a row with no timestamp, or an older server. Fall
-    // back to the raw code rather than showing nothing.
-    { label: DEVICE_STATUS_LABELS[status] || `Status ${status}`, style: 'bg-gray-100 text-gray-500' }
+  const { t } = useTranslation()
+  const deviceLabel = DEVICE_STATUS_CODES.includes(status)
+    ? t(`attendance.device_status.${status}`)
+    : null
+  const s = DERIVED_STYLES[derived]
+    ? { label: t(`attendance.derived.${derived}`), style: DERIVED_STYLES[derived] }
+    : // No derived label: a row with no timestamp, or an older server. Fall
+      // back to the raw code rather than showing nothing.
+      { label: deviceLabel || t('attendance.status_code', { status }), style: 'bg-gray-100 text-gray-500' }
 
-  const device = DEVICE_STATUS_LABELS[status] || String(status)
-  const hint = DERIVED_HINTS[derived]
-  const title = hint ? `${hint}. Device reported: ${device}` : `Device reported: ${device}`
+  const device = deviceLabel || String(status)
+  const title = DERIVED_STYLES[derived]
+    ? t('attendance.hint_with_device', { hint: t(`attendance.derived_hint.${derived}`), device })
+    : t('attendance.device_reported', { device })
 
   return (
     <span
@@ -64,8 +57,7 @@ function StatusBadge({ derived, status }) {
 // it reads as a truthful "No records found" and exports as an empty
 // timesheet. Caught here so the operator is told which field is wrong; the
 // server refuses the same pair, in app/routers/attendance.py.
-const RANGE_INVERTED =
-  'The end of the range is before its start. Pick a To date after the From date.'
+const RANGE_INVERTED = 'errors.attendance.range_inverted'
 
 // Both values are `datetime-local` strings, "YYYY-MM-DDTHH:mm", so comparing
 // them as text orders them the way comparing the instants would. Deliberately
@@ -76,6 +68,7 @@ function rangeInverted(from, to) {
 }
 
 export default function Attendance() {
+  const { t } = useTranslation()
   const [devices, setDevices] = useState([])
   const [employees, setEmployees] = useState([])
   const [filters, setFilters] = useState({
@@ -142,7 +135,7 @@ export default function Attendance() {
   // comes out whole even though only 50 rows are on screen.
   async function exportExcel() {
     if (rangeInverted(filters.from_date, filters.to_date)) {
-      setExportError(RANGE_INVERTED)
+      setExportError(t(RANGE_INVERTED))
       return
     }
     setExporting(true)
@@ -192,18 +185,18 @@ export default function Attendance() {
   return (
     <>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold text-gray-900">Attendance</h1>
+        <h1 className="text-xl font-semibold text-gray-900">{t('nav.attendance')}</h1>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-400">{shownTotal.toLocaleString()} records</span>
+          <span className="text-sm text-gray-400">{t('attendance.records', { count: shownTotal, formatted: formatNumber(shownTotal) })}</span>
           <button
             onClick={exportExcel}
             disabled={exporting || loading || badRange || shownTotal === 0}
             title={
               badRange
-                ? RANGE_INVERTED
+                ? t(RANGE_INVERTED)
                 : shownTotal === 0
-                  ? 'Nothing matches the current filter'
-                  : 'The monthly timesheet: a row per person per day, scored against the shift — hours, lateness, absences'
+                  ? t('attendance.export_nothing')
+                  : t('attendance.export_title')
             }
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
           >
@@ -227,7 +220,7 @@ export default function Attendance() {
               <path d="M8 8.5v3.75" />
               <path d="M6.25 10.5 8 12.25l1.75-1.75" />
             </svg>
-            {exporting ? 'Exporting…' : 'Export timesheet'}
+            {exporting ? t('attendance.exporting') : t('attendance.export')}
           </button>
         </div>
       </div>
@@ -241,13 +234,13 @@ export default function Attendance() {
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4 grid grid-cols-2 md:grid-cols-4 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Device</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">{t('attendance.device')}</label>
           <select
             value={filters.device_sn}
             onChange={(e) => setFilter('device_sn', e.target.value)}
             className="input w-full text-sm"
           >
-            <option value="">All devices</option>
+            <option value="">{t('attendance.all_devices')}</option>
             {devices.map((d) => (
               <option key={d.serial_number} value={d.serial_number}>
                 {d.name || d.serial_number}
@@ -257,13 +250,13 @@ export default function Attendance() {
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Employee</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">{t('attendance.employee')}</label>
           <select
             value={filters.user_id}
             onChange={(e) => setFilter('user_id', e.target.value)}
             className="input w-full text-sm"
           >
-            <option value="">All employees</option>
+            <option value="">{t('attendance.all_employees')}</option>
             {employees.map((e) => (
               <option key={e.user_id} value={e.user_id}>
                 {e.name || e.user_id}
@@ -273,7 +266,7 @@ export default function Attendance() {
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">{t('attendance.from')}</label>
           {/* The pair bounds itself: the picker greys out anything past the
               To date. A value typed straight into the field still gets
               through — browsers set it and only mark the input invalid — so
@@ -289,7 +282,7 @@ export default function Attendance() {
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">{t('attendance.to')}</label>
           <input
             type="datetime-local"
             value={filters.to_date}
@@ -301,7 +294,7 @@ export default function Attendance() {
           />
           {badRange && (
             <p id="attendance-range-error" className="mt-1 text-xs text-red-600">
-              {RANGE_INVERTED}
+              {t(RANGE_INVERTED)}
             </p>
           )}
         </div>
@@ -317,10 +310,7 @@ export default function Attendance() {
             role="switch"
             aria-checked={filters.include_hidden}
             onClick={() => setFilter('include_hidden', !filters.include_hidden)}
-            title={
-              'Failed scans (PIN 0) and punches by deleted employees. ' +
-              'Nothing is deleted, and the Excel timesheet always keeps the latter.'
-            }
+            title={t('attendance.hidden_title')}
             className="group flex items-center gap-2.5 text-sm text-gray-600"
           >
             <span
@@ -334,7 +324,7 @@ export default function Attendance() {
                 }`}
               />
             </span>
-            Show hidden records
+            {t('attendance.show_hidden')}
           </button>
         </div>
       </div>
@@ -342,30 +332,30 @@ export default function Attendance() {
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {badRange ? (
-          <div className="p-12 text-center text-sm text-red-600">{RANGE_INVERTED}</div>
+          <div className="p-12 text-center text-sm text-red-600">{t(RANGE_INVERTED)}</div>
         ) : loading ? (
-          <div className="p-12 text-center text-sm text-gray-400">Loading…</div>
+          <div className="p-12 text-center text-sm text-gray-400">{t('common.loading')}</div>
         ) : error ? (
           <div className="p-12 text-center text-sm text-red-600">{error}</div>
         ) : shownRows.length === 0 ? (
-          <div className="p-12 text-center text-sm text-gray-400">No records found.</div>
+          <div className="p-12 text-center text-sm text-gray-400">{t('attendance.no_records')}</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Employee</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('attendance.employee')}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">
-                  Timestamp
-                  <span className="ml-1.5 font-normal text-gray-400 text-xs">device local time</span>
+                  {t('attendance.timestamp')}
+                  <span className="ml-1.5 font-normal text-gray-400 text-xs">{t('attendance.device_local_time')}</span>
                 </th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">
-                  Status
+                  {t('attendance.status')}
                   <span className="ml-1.5 font-normal text-gray-400 text-xs">
-                    from the day&rsquo;s punches
+                    {t('attendance.from_days_punches')}
                   </span>
                 </th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Device</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Source</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('attendance.device')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">{t('attendance.source')}</th>
               </tr>
             </thead>
             <tbody>
@@ -381,7 +371,7 @@ export default function Attendance() {
                   <td className="px-4 py-3 text-gray-700 tabular-nums">
                     {formatTs(row.timestamp)}
                     <span className="ml-2 text-xs text-gray-400 tracking-normal">
-                      {row.timezone || 'unlabelled'}
+                      {row.timezone || t('attendance.unlabelled')}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -399,7 +389,7 @@ export default function Attendance() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-sm">
             <span className="text-gray-400">
-              Page {page + 1} of {totalPages}
+              {t('common.page_of', { page: page + 1, total: totalPages })}
             </span>
             <div className="flex gap-2">
               <button
@@ -407,14 +397,14 @@ export default function Attendance() {
                 disabled={page === 0}
                 className="px-3 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-colors"
               >
-                ← Prev
+                ← {t('common.prev')}
               </button>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
                 disabled={page >= totalPages - 1}
                 className="px-3 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-colors"
               >
-                Next →
+                {t('common.next')} →
               </button>
             </div>
           </div>

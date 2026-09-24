@@ -1,11 +1,11 @@
 from contextlib import contextmanager
 
-from fastapi import HTTPException
 from zk import ZK
 from zk.exception import ZKErrorConnection, ZKErrorResponse, ZKNetworkError
 
 from app.database import SessionLocal
 from app.models import Device, DeviceEmployee
+from app.errors import AppError
 
 
 def _connect(zk_instance: ZK):
@@ -24,7 +24,7 @@ def _connect(zk_instance: ZK):
         return zk_instance.connect()
     except ZKErrorResponse as exc:
         if str(exc) == "Unauthenticated":
-            raise HTTPException(
+            raise AppError("device.comm_key_refused",
                 status_code=403,
                 detail="Device refused the connection — the configured comm key is likely wrong",
             )

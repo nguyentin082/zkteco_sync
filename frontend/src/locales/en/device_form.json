@@ -1,0 +1,9 @@
+{
+  "edit_title": "Edit Device",
+  "add_title": "Add Device",
+  "serial_number": "Serial Number",
+  "ip_address": "IP Address",
+  "port": "Port",
+  "name": "Name",
+  "name_placeholder": "Door Access (optional)"
+}

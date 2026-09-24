@@ -7,6 +7,7 @@ from app import audit
 from app.database import get_db
 from app.deps import require_admin, require_auth
 from app.models import HrmIntegration, User
+from app.errors import message
 from app.net import client_ip
 from app.services.hrm_sync import run_sync
 
@@ -93,4 +94,4 @@ def update_config(
 @router.post("/run", dependencies=[Depends(require_admin)])
 def trigger_sync(background_tasks: BackgroundTasks):
     background_tasks.add_task(run_sync)
-    return {"message": "Sync started"}
+    return {"message": "Sync started", **message("hrm_sync_started")}

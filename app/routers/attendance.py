@@ -2,7 +2,7 @@ from datetime import datetime, time, timedelta
 from io import BytesIO
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,7 @@ from app.services.attendance_pairing import (
     day_edges, is_paired, label, minute_of_day, wall_clock,
 )
 from app.services.punch_filter import NON_PERSON_PINS
+from app.errors import AppError
 
 router = APIRouter(prefix="/attendance", tags=["attendance"], dependencies=[Depends(require_auth)])
 
@@ -50,7 +51,7 @@ def _build_query(db, device_sn, user_id, from_date, to_date,
     # and both wrong. Refused here, in the one place the table and the export
     # share, so neither can drift from the other.
     if from_date and to_date and from_date > to_date:
-        raise HTTPException(
+        raise AppError("attendance.range_inverted",
             status_code=400,
             detail="The end of the range is before its start. Pick a To date after the From date.",
         )
@@ -653,7 +654,7 @@ def export_attendance(
         # itself is small, but it is built by walking every punch behind it.
         # Refused up front, with the numbers, rather than half-building a
         # workbook the server cannot hold.
-        raise HTTPException(
+        raise AppError("attendance.export_too_many", params={"total": total, "max": config.ATTENDANCE_EXPORT_MAX_ROWS},
             status_code=400,
             detail=(
                 f"{total:,} records match this filter, and an export is limited "
@@ -690,7 +691,7 @@ def export_attendance(
     # Same answer as above — say the numbers, name the fix, build nothing.
     grid = len(people) * len(days)
     if grid > config.ATTENDANCE_EXPORT_MAX_ROWS:
-        raise HTTPException(
+        raise AppError("attendance.timesheet_too_many", params={"days": len(days), "people": len(people), "rows": grid, "max": config.ATTENDANCE_EXPORT_MAX_ROWS},
             status_code=400,
             detail=(
                 f"That range is {len(days):,} days for {len(people):,} "

@@ -1,0 +1,13 @@
+{
+  "track_delivery": "Track real delivery in the Commands drawer.",
+  "pushed_one": "{{count}} user pushed to {{device}}",
+  "pushed_other": "{{count}} users pushed to {{device}}",
+  "title": "Device Users",
+  "intro": "Select employees to push to <b>{{device}}</b>. Pre-checked employees are already enrolled.",
+  "skipped": "Skipped on purpose — not pushed",
+  "no_employees": "No employees in database.",
+  "enrolled": "Enrolled",
+  "pushing": "Pushing…",
+  "push_button_one": "Push {{count}} user to device",
+  "push_button_other": "Push {{count}} users to device"
+}

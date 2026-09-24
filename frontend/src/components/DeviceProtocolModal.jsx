@@ -1,9 +1,7 @@
 import { useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 
-const PROTOCOLS = [
-  { value: 'att', label: 'Attendance PUSH (att)' },
-  { value: 'acc', label: 'Security PUSH (acc, access control)' },
-]
+const PROTOCOLS = ['att', 'acc']
 
 /**
  * Correcting a device's protocol is its own deliberate action, not a field on
@@ -13,6 +11,7 @@ const PROTOCOLS = [
  * classification in adms.py until the device itself proves otherwise.
  */
 export default function DeviceProtocolModal({ device, onSave, onClose }) {
+  const { t } = useTranslation()
   const [protocol, setProtocol] = useState(device.protocol || 'att')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -40,7 +39,7 @@ export default function DeviceProtocolModal({ device, onSave, onClose }) {
       {/* Modal */}
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-gray-900">Change Protocol</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{t('device_protocol.title')}</h2>
           <button
             type="button"
             onClick={onClose}
@@ -51,18 +50,21 @@ export default function DeviceProtocolModal({ device, onSave, onClose }) {
         </div>
 
         <p className="text-sm text-gray-500 mb-4">
-          <span className="font-medium text-gray-700">{device.name || device.serial_number}</span>{' '}
-          normally has this set automatically from what the device announces. Use this only
-          when a terminal has just been switched between cloud and local server modes.
+          <Trans
+            i18nKey="device_protocol.intro"
+            values={{ device: device.name || device.serial_number }}
+            components={{ b: <span className="font-medium text-gray-700" /> }}
+          />
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Protocol
+              {t('device_protocol.protocol')}
               <span className="ml-1.5 text-xs font-normal text-gray-400">
-                currently {device.protocol || 'att'}
-                {device.protocol_pinned ? ' (manually pinned)' : ' (automatic)'}
+                {device.protocol_pinned
+                  ? t('device_protocol.current_pinned', { protocol: device.protocol || 'att' })
+                  : t('device_protocol.current_auto', { protocol: device.protocol || 'att' })}
               </span>
             </label>
             <select
@@ -72,16 +74,13 @@ export default function DeviceProtocolModal({ device, onSave, onClose }) {
               data-testid="device-protocol-select"
             >
               {PROTOCOLS.map((p) => (
-                <option key={p.value} value={p.value}>{p.label}</option>
+                <option key={p} value={p}>{t(`device_protocol.options.${p}`)}</option>
               ))}
             </select>
           </div>
 
           <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            Saving pins this value: the server stops changing it automatically until the
-            device itself sends evidence it speaks a different protocol (a fresh handshake,
-            an attendance push, or a registration call), at which point the pin is cleared
-            and the correction is recorded in the audit log — never silent.
+            {t('device_protocol.pin_notice')}
           </div>
 
           {error && (
@@ -96,14 +95,14 @@ export default function DeviceProtocolModal({ device, onSave, onClose }) {
               onClick={onClose}
               className="flex-1 border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium py-2 rounded-lg transition-colors"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={saving || !changed}
               className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
             >
-              {saving ? 'Saving…' : 'Update'}
+              {saving ? t('common.saving') : t('common.update')}
             </button>
           </div>
         </form>

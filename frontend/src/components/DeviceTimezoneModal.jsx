@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 
 // The IANA zone list straight from the browser's own ICU data, which is the
 // same tz database the server validates against. Chrome has had this since 99;
@@ -22,6 +23,7 @@ function knownZones() {
  * it is about to do before it does it.
  */
 export default function DeviceTimezoneModal({ device, onSave, onClose }) {
+  const { t } = useTranslation()
   const [timezone, setTimezone] = useState(device.timezone || '')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -59,7 +61,7 @@ export default function DeviceTimezoneModal({ device, onSave, onClose }) {
       {/* Modal */}
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-gray-900">Change Timezone</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{t('device_timezone.title')}</h2>
           <button
             type="button"
             onClick={onClose}
@@ -70,16 +72,19 @@ export default function DeviceTimezoneModal({ device, onSave, onClose }) {
         </div>
 
         <p className="text-sm text-gray-500 mb-4">
-          <span className="font-medium text-gray-700">{device.name || device.serial_number}</span>{' '}
-          reports punch times with no timezone. This says what those times mean.
+          <Trans
+            i18nKey="device_timezone.intro"
+            values={{ device: device.name || device.serial_number }}
+            components={{ b: <span className="font-medium text-gray-700" /> }}
+          />
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Timezone
+              {t('device_timezone.timezone')}
               <span className="ml-1.5 text-xs font-normal text-gray-400">
-                currently {device.timezone || 'not set'}
+                {t('device_timezone.current', { tz: device.timezone || t('device_timezone.not_set') })}
               </span>
             </label>
             {zones.length > 0 ? (
@@ -89,7 +94,7 @@ export default function DeviceTimezoneModal({ device, onSave, onClose }) {
                 className="input w-full text-sm"
                 data-testid="device-timezone-select"
               >
-                {!device.timezone && <option value="">Select a timezone…</option>}
+                {!device.timezone && <option value="">{t('device_timezone.select')}</option>}
                 {zones.map((z) => (
                   <option key={z} value={z}>{z}</option>
                 ))}
@@ -107,10 +112,7 @@ export default function DeviceTimezoneModal({ device, onSave, onClose }) {
           </div>
 
           <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            Saving relabels every attendance record from this device. The recorded
-            times themselves are not changed — only what timezone they are read in.
-            Use this to correct a wrong label, not to record a device that has
-            physically moved.
+            {t('device_timezone.notice')}
           </div>
 
           {error && (
@@ -125,14 +127,14 @@ export default function DeviceTimezoneModal({ device, onSave, onClose }) {
               onClick={onClose}
               className="flex-1 border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium py-2 rounded-lg transition-colors"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={saving || !timezone || !changed}
               className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
             >
-              {saving ? 'Saving…' : 'Update'}
+              {saving ? t('common.saving') : t('common.update')}
             </button>
           </div>
         </form>

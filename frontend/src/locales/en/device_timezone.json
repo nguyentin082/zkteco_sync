@@ -1,0 +1,9 @@
+{
+  "title": "Change Timezone",
+  "intro": "<b>{{device}}</b> reports punch times with no timezone. This says what those times mean.",
+  "timezone": "Timezone",
+  "current": "currently {{tz}}",
+  "not_set": "not set",
+  "select": "Select a timezone…",
+  "notice": "Saving relabels every attendance record from this device. The recorded times themselves are not changed — only what timezone they are read in. Use this to correct a wrong label, not to record a device that has physically moved."
+}

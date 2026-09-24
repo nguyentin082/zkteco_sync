@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../api'
 
 export default function PasswordConfirmModal({ title, description, onConfirm, onClose }) {
+  const { t } = useTranslation()
   const [password, setPassword] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState('')
@@ -19,7 +21,7 @@ export default function PasswordConfirmModal({ title, description, onConfirm, on
       await api.auth.verify(password)
       onConfirm()
     } catch {
-      setError('Incorrect password')
+      setError(t('password_confirm.incorrect'))
       setPassword('')
       inputRef.current?.focus()
     } finally {
@@ -49,7 +51,7 @@ export default function PasswordConfirmModal({ title, description, onConfirm, on
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Confirm your password
+              {t('password_confirm.label')}
             </label>
             <input
               ref={inputRef}
@@ -74,14 +76,14 @@ export default function PasswordConfirmModal({ title, description, onConfirm, on
               onClick={onClose}
               className="flex-1 border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium py-2 rounded-lg transition-colors"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={verifying}
               className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
             >
-              {verifying ? 'Verifying…' : 'Confirm'}
+              {verifying ? t('password_confirm.verifying') : t('common.confirm')}
             </button>
           </div>
         </form>

@@ -59,6 +59,8 @@ implementation, it would have shipped one of those two.
 import logging
 from datetime import datetime
 
+from app.errors import CodedError
+
 log = logging.getLogger(__name__)
 
 
@@ -125,7 +127,7 @@ MIN_DOOR = 1
 MAX_DOOR = 10
 
 
-class UnsafeDoorCommand(ValueError):
+class UnsafeDoorCommand(CodedError):
     """A door command was asked for that this module will not construct."""
 
 
@@ -143,25 +145,31 @@ def unlock_command(door: int = DEFAULT_DOOR, seconds: int = 3) -> str:
     option: 255 is not a long unlock, it is a permanent one.
     """
     if not isinstance(door, int) or isinstance(door, bool):
-        raise UnsafeDoorCommand("door must be an integer")
+        raise UnsafeDoorCommand("door.not_integer", "door must be an integer")
     if not isinstance(seconds, int) or isinstance(seconds, bool):
-        raise UnsafeDoorCommand("seconds must be an integer")
+        raise UnsafeDoorCommand("door.seconds_not_integer", "seconds must be an integer")
     if not MIN_DOOR <= door <= MAX_DOOR:
         raise UnsafeDoorCommand(
+            "door.out_of_range",
             f"door must be between {MIN_DOOR} and {MAX_DOOR}; door 0 means "
-            "EVERY door on the controller and is never sent from here"
+            "EVERY door on the controller and is never sent from here",
+            min=MIN_DOOR, max=MAX_DOOR,
         )
     if seconds == DOOR_LATCH_NORMAL_OPEN:
         raise UnsafeDoorCommand(
+            "door.latch_refused",
             "255 is not a 255-second unlock — in this protocol 0xFF means "
             "latch the door normally-open, i.e. leave it open indefinitely. "
-            f"Use {MAX_UNLOCK_SECONDS} or fewer seconds."
+            f"Use {MAX_UNLOCK_SECONDS} or fewer seconds.",
+            max=MAX_UNLOCK_SECONDS,
         )
     if not MIN_UNLOCK_SECONDS <= seconds <= MAX_UNLOCK_SECONDS:
         raise UnsafeDoorCommand(
+            "door.seconds_out_of_range",
             f"seconds must be between {MIN_UNLOCK_SECONDS} and "
             f"{MAX_UNLOCK_SECONDS}; 0 is the immediate-close command, not an "
-            "unlock"
+            "unlock",
+            min=MIN_UNLOCK_SECONDS, max=MAX_UNLOCK_SECONDS,
         )
     return (
         "CONTROL DEVICE "

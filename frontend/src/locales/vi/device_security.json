@@ -1,0 +1,20 @@
+{
+  "allowlist_updated": "Đã cập nhật danh sách IP cho phép",
+  "key_cleared": "Đã xóa comm key",
+  "key_set_toast": "Đã đặt comm key",
+  "key_invalid": "Nhập một số nguyên (từ 0 trở lên)",
+  "title": "Bảo mật thiết bị",
+  "comm_key": "Comm Key",
+  "comm_key_help": "Dùng để máy chủ xác thực với thiết bị qua TCP 4370. Sau khi đặt sẽ không bao giờ hiển thị lại — chỉ cho biết đã cấu hình hay chưa.",
+  "is_set": "Đã đặt",
+  "not_set": "Chưa đặt",
+  "change": "Đổi",
+  "set_key": "Đặt khóa",
+  "new_key": "Comm key mới",
+  "restrict_intro": "Chỉ cho phép <mono>{{sn}}</mono> đẩy chấm công từ các địa chỉ này. Để tắt kiểm tra nếu địa điểm dùng IP động.",
+  "last_push_from": "Lần đẩy gần nhất từ",
+  "add_address": "Thêm địa chỉ này",
+  "allowed_cidrs": "Các CIDR được phép",
+  "cidrs_help": "Phân tách bằng dấu phẩy. Một địa chỉ đơn nghĩa là chỉ riêng địa chỉ đó.",
+  "enforce": "Bật danh sách cho phép này"
+}

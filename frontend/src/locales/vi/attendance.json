@@ -1,0 +1,47 @@
+{
+  "derived": {
+    "check_in": "Vào",
+    "check_out": "Ra",
+    "interim": "Giữa ca",
+    "in_only": "Vào · không có Ra",
+    "out_only": "Ra · không có Vào"
+  },
+  "derived_hint": {
+    "check_in": "Lượt chấm sớm nhất trong ngày",
+    "check_out": "Lượt chấm muộn nhất trong ngày",
+    "interim": "Không phải lượt chấm đầu tiên hay cuối cùng trong ngày",
+    "in_only": "Lượt chấm duy nhất trong ngày, ở nửa đầu ca — không ghi nhận giờ ra",
+    "out_only": "Lượt chấm duy nhất trong ngày, ở nửa sau ca — không ghi nhận giờ vào"
+  },
+  "device_status": {
+    "0": "Vào",
+    "1": "Ra",
+    "2": "Ra nghỉ",
+    "3": "Vào lại sau nghỉ",
+    "4": "Vào tăng ca",
+    "5": "Ra tăng ca"
+  },
+  "status_code": "Trạng thái {{status}}",
+  "hint_with_device": "{{hint}}. Thiết bị báo: {{device}}",
+  "device_reported": "Thiết bị báo: {{device}}",
+  "records_other": "{{formatted}} bản ghi",
+  "export_nothing": "Không có bản ghi nào khớp bộ lọc hiện tại",
+  "export_title": "Bảng công theo tháng: mỗi người mỗi ngày một dòng, đối chiếu với ca — số giờ, đi muộn, vắng mặt",
+  "exporting": "Đang xuất…",
+  "export": "Xuất bảng công",
+  "device": "Thiết bị",
+  "all_devices": "Tất cả thiết bị",
+  "employee": "Nhân viên",
+  "all_employees": "Tất cả nhân viên",
+  "from": "Từ",
+  "to": "Đến",
+  "hidden_title": "Lượt quét lỗi (PIN 0) và lượt chấm của nhân viên đã xóa. Không có gì bị xóa, và bảng công Excel luôn giữ loại thứ hai.",
+  "show_hidden": "Hiện bản ghi ẩn",
+  "no_records": "Không có bản ghi nào.",
+  "timestamp": "Thời gian",
+  "device_local_time": "giờ địa phương của máy",
+  "status": "Trạng thái",
+  "from_days_punches": "suy ra từ các lượt chấm trong ngày",
+  "source": "Nguồn",
+  "unlabelled": "chưa gắn nhãn"
+}

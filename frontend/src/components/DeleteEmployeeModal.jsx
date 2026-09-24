@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 
 /**
  * Removing a person from the system entirely (E14). Its own modal, matching
@@ -19,6 +20,7 @@ import { useState } from 'react'
  *   before they click, not after.
  */
 export default function DeleteEmployeeModal({ employee, onConfirm, onClose }) {
+  const { t } = useTranslation()
   const [error, setError] = useState('')
   const [deleting, setDeleting] = useState(false)
 
@@ -41,7 +43,7 @@ export default function DeleteEmployeeModal({ employee, onConfirm, onClose }) {
 
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-gray-900">Delete employee</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{t('delete_employee.title')}</h2>
           <button
             type="button"
             onClick={onClose}
@@ -52,25 +54,25 @@ export default function DeleteEmployeeModal({ employee, onConfirm, onClose }) {
         </div>
 
         <p className="text-sm text-gray-700 mb-4">
-          Remove <span className="font-medium">{displayName}</span>{' '}
-          <span className="font-mono text-xs text-gray-500">({employee?.user_id})</span> from
-          the system.
+          <Trans
+            i18nKey="delete_employee.intro"
+            values={{ name: displayName, user_id: employee?.user_id }}
+            components={{
+              name: <span className="font-medium" />,
+              pin: <span className="font-mono text-xs text-gray-500" />,
+            }}
+          />
         </p>
 
         <div className="space-y-2 mb-4">
           <div className="text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-            <span className="font-semibold">Removed:</span> the enrolment and credential
-            records — device links, captured face and fingerprint templates, and photos.
+            <Trans i18nKey="delete_employee.removed" components={{ b: <span className="font-semibold" /> }} />
           </div>
           <div className="text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-            <span className="font-semibold">Kept:</span> this person's attendance history.
-            Punches already happened and have already reached the HRM — deleting them here
-            would rewrite payroll history, so nothing here ever touches attendance.
+            <Trans i18nKey="delete_employee.kept" components={{ b: <span className="font-semibold" /> }} />
           </div>
           <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            This is not necessarily final: if a device still reports this PIN, a later sync
-            will re-create this employee record from what the terminal actually holds — that
-            is correct behaviour, not a bug.
+            {t('delete_employee.not_final')}
           </div>
         </div>
 
@@ -86,7 +88,7 @@ export default function DeleteEmployeeModal({ employee, onConfirm, onClose }) {
             onClick={onClose}
             className="flex-1 border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium py-2 rounded-lg transition-colors"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             type="button"
@@ -94,7 +96,7 @@ export default function DeleteEmployeeModal({ employee, onConfirm, onClose }) {
             disabled={deleting}
             className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
           >
-            {deleting ? 'Deleting…' : 'Delete employee'}
+            {deleting ? t('common.deleting') : t('delete_employee.title')}
           </button>
         </div>
       </div>

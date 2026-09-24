@@ -1,0 +1,9 @@
+{
+  "seconds": "{{count}} giây",
+  "minutes": "{{count}} phút",
+  "hours": "{{count}} giờ",
+  "days": "{{count}} ngày",
+  "ago": "{{time}} trước",
+  "in": "sau {{time}}",
+  "just_now": "vừa xong"
+}

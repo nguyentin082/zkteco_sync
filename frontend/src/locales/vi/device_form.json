@@ -1,0 +1,9 @@
+{
+  "edit_title": "Sửa thiết bị",
+  "add_title": "Thêm thiết bị",
+  "serial_number": "Số serial",
+  "ip_address": "Địa chỉ IP",
+  "port": "Cổng",
+  "name": "Tên",
+  "name_placeholder": "Cửa ra vào (không bắt buộc)"
+}

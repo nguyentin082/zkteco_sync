@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 
 export default function Drawer({ title, onClose, children, width = 'max-w-md' }) {
+  const { t } = useTranslation()
   useEffect(() => {
     function onKey(e) {
       if (e.key === 'Escape') onClose()
@@ -17,6 +19,7 @@ export default function Drawer({ title, onClose, children, width = 'max-w-md' })
           <h2 className="text-base font-semibold text-gray-900">{title}</h2>
           <button
             onClick={onClose}
+            aria-label={t('common.close')}
             className="text-gray-400 hover:text-gray-600 transition-colors text-lg leading-none"
           >
             ✕

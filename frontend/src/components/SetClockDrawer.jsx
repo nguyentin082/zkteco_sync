@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../api'
+import { serverMessage } from '../i18n'
+import { formatDateTime } from '../format'
 import Drawer from './Drawer'
 
 export default function SetClockDrawer({ device, onClose, showToast }) {
+  const { t } = useTranslation()
   const [deviceTime, setDeviceTime] = useState(null)
   const [mode, setMode] = useState('sync')
   const [customDt, setCustomDt] = useState('')
@@ -35,7 +39,7 @@ export default function SetClockDrawer({ device, onClose, showToast }) {
       const result = await api.devices.setTime(device.serial_number, payload)
       // Queued is not updated. On `acc` the server returns what it actually
       // did, and that is what the operator is told.
-      showToast(result?.message || 'Clock updated')
+      showToast(serverMessage(result, t('set_clock.updated')))
       onClose()
     } catch (err) {
       setError(err.message)
@@ -45,28 +49,25 @@ export default function SetClockDrawer({ device, onClose, showToast }) {
   }
 
   return (
-    <Drawer title="Set Device Clock" onClose={onClose}>
+    <Drawer title={t('set_clock.title')} onClose={onClose}>
       <div className="mb-4 text-sm">
-        <p className="text-gray-500 mb-1">Current device time</p>
+        <p className="text-gray-500 mb-1">{t('set_clock.current_time')}</p>
         {isAcc ? (
           <p className="text-gray-500 leading-snug">
-            Not readable on an access-control terminal — the protocol has no
-            command for asking it what time it holds. Setting the clock below
-            works, and does not depend on knowing the current value.
+            {t('set_clock.acc_unreadable')}
           </p>
         ) : (
           <p className="font-mono text-gray-900">
-            {deviceTime ? new Date(deviceTime).toLocaleString() : '—'}
+            {deviceTime ? formatDateTime(deviceTime) : '—'}
           </p>
         )}
       </div>
 
       {isAcc && (
         <p className="text-xs text-gray-500 leading-snug mb-4">
-          The clock is set to this terminal&apos;s own timezone
-          {device.timezone ? ` (${device.timezone})` : ''}, so its display and
-          the punches it reports stay consistent. The command is queued and
-          applies when the terminal next polls.
+          {device.timezone
+            ? t('set_clock.acc_note_tz', { tz: device.timezone })
+            : t('set_clock.acc_note')}
         </p>
       )}
 
@@ -80,7 +81,7 @@ export default function SetClockDrawer({ device, onClose, showToast }) {
               checked={mode === 'sync'}
               onChange={() => setMode('sync')}
             />
-            Sync to server time (now)
+            {t('set_clock.sync_now')}
           </label>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
             <input
@@ -90,13 +91,13 @@ export default function SetClockDrawer({ device, onClose, showToast }) {
               checked={mode === 'custom'}
               onChange={() => setMode('custom')}
             />
-            Set custom time
+            {t('set_clock.custom')}
           </label>
         </div>
 
         {mode === 'custom' && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date &amp; Time</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('set_clock.date_time')}</label>
             <input
               type="datetime-local"
               required
@@ -118,7 +119,7 @@ export default function SetClockDrawer({ device, onClose, showToast }) {
           disabled={saving}
           className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
         >
-          {saving ? 'Setting…' : 'Set Clock'}
+          {saving ? t('set_clock.setting') : t('set_clock.submit')}
         </button>
       </form>
     </Drawer>

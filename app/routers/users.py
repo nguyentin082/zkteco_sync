@@ -15,7 +15,7 @@ Waiting for the session to expire on its own is not good enough.
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app import audit
@@ -25,6 +25,7 @@ from app.models import User, UserSession
 from app.net import client_ip
 from app.schemas import UserCreate, UserOut, UserResetPassword, UserUpdate
 from app.security import hash_password
+from app.errors import AppError
 
 router = APIRouter(prefix="/users", tags=["users"], dependencies=[Depends(require_admin)])
 
@@ -36,13 +37,13 @@ _MIN_PASSWORD_LENGTH = 8
 def _get_user_or_404(user_id: int, db: Session) -> User:
     user = db.query(User).filter_by(id=user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise AppError("user.not_found", status_code=404, detail="User not found")
     return user
 
 
 def _validate_password(password: str) -> None:
     if len(password) < _MIN_PASSWORD_LENGTH:
-        raise HTTPException(
+        raise AppError("user.password_too_short", params={"min": _MIN_PASSWORD_LENGTH},
             status_code=400,
             detail=f"Password must be at least {_MIN_PASSWORD_LENGTH} characters",
         )
@@ -75,7 +76,7 @@ def create_user(
     current: User = Depends(require_admin),
 ):
     if db.query(User).filter_by(username=payload.username).first():
-        raise HTTPException(status_code=409, detail="Username already exists")
+        raise AppError("user.username_exists", status_code=409, detail="Username already exists")
     _validate_password(payload.password)
 
     user = User(
@@ -110,14 +111,14 @@ def update_user(
     deactivating = "is_active" in changes and user.is_active and changes["is_active"] is False
 
     if user.id == current.id and (demoting or deactivating):
-        raise HTTPException(
+        raise AppError("user.cannot_demote_self",
             status_code=400,
             detail="You cannot demote or deactivate your own account.",
         )
 
     if user.role == "admin" and user.is_active and (demoting or deactivating):
         if _active_admin_count(db, exclude_id=user.id) == 0:
-            raise HTTPException(
+            raise AppError("user.last_admin_demote",
                 status_code=400,
                 detail="This is the last active admin — demoting or deactivating it "
                        "would lock everyone out. Promote another user to admin first.",
@@ -177,11 +178,11 @@ def delete_user(
     deleted_username = user.username
 
     if user.id == current.id:
-        raise HTTPException(status_code=400, detail="You cannot delete your own account.")
+        raise AppError("user.cannot_delete_self", status_code=400, detail="You cannot delete your own account.")
 
     if user.role == "admin" and user.is_active:
         if _active_admin_count(db, exclude_id=user.id) == 0:
-            raise HTTPException(
+            raise AppError("user.last_admin_delete",
                 status_code=400,
                 detail="This is the last active admin — deleting it would lock "
                        "everyone out. Promote another user to admin first.",

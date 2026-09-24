@@ -1,0 +1,28 @@
+{
+  "loading": "Đang tải…",
+  "saving": "Đang lưu…",
+  "logout": "Đăng xuất",
+  "language": "Ngôn ngữ",
+  "language_names": {
+    "vi": "Tiếng Việt",
+    "en": "English"
+  },
+  "close": "Đóng",
+  "more_actions": "Thao tác khác",
+  "cancel": "Hủy",
+  "confirm": "Xác nhận",
+  "deleting": "Đang xóa…",
+  "save_changes": "Lưu thay đổi",
+  "update": "Cập nhật",
+  "clear": "Xóa",
+  "save": "Lưu",
+  "select_all": "Chọn tất cả",
+  "deselect_all": "Bỏ chọn tất cả",
+  "cancelling": "Đang hủy…",
+  "edit": "Sửa",
+  "delete": "Xóa",
+  "page_of": "Trang {{page}} / {{total}}",
+  "prev": "Trước",
+  "next": "Sau",
+  "no_results": "Không có kết quả."
+}

@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../api'
+import { serverMessage } from '../i18n'
+import { formatDateTime } from '../format'
 import Drawer from './Drawer'
 
 // Timestamps come back from this API in two shapes depending on the endpoint:
@@ -28,6 +31,7 @@ function Section({ title, children }) {
 }
 
 export default function DeviceInfoDrawer({ device, onClose, showToast }) {
+  const { t } = useTranslation()
   const [info, setInfo] = useState(null)
   const [error, setError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
@@ -51,7 +55,7 @@ export default function DeviceInfoDrawer({ device, onClose, showToast }) {
     setRefreshing(true)
     try {
       const result = await api.devices.refreshInfo(device.serial_number)
-      showToast?.(result?.message || 'Refresh queued')
+      showToast?.(serverMessage(result, t('device_info.refresh_queued')))
     } catch (err) {
       showToast?.(err.message, 'error')
     } finally {
@@ -60,7 +64,7 @@ export default function DeviceInfoDrawer({ device, onClose, showToast }) {
   }
 
   return (
-    <Drawer title="Device Info" onClose={onClose}>
+    <Drawer title={t('device_info.title')} onClose={onClose}>
       {error && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4">
           {error}
@@ -70,15 +74,13 @@ export default function DeviceInfoDrawer({ device, onClose, showToast }) {
       {lastKnown && (
         <div className="mb-5 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide mb-1">
-            Last known — not a live reading
+            {t('device_info.last_known')}
           </p>
-          <p className="text-xs text-amber-900 leading-snug">{info.message}</p>
+          <p className="text-xs text-amber-900 leading-snug">{serverMessage(info)}</p>
           <p className="text-xs text-amber-800 mt-1">
-            Reported by the terminal{' '}
             {info.as_of
-              ? `at ${new Date(anchorUtc(info.as_of)).toLocaleString()}`
-              : '— time not recorded'}
-            .
+              ? t('device_info.reported_at', { time: formatDateTime(anchorUtc(info.as_of)) })
+              : t('device_info.reported_unknown')}
           </p>
           <button
             type="button"
@@ -86,31 +88,31 @@ export default function DeviceInfoDrawer({ device, onClose, showToast }) {
             disabled={refreshing}
             className="mt-2 text-xs font-medium text-amber-900 underline disabled:opacity-50"
           >
-            {refreshing ? 'Queueing…' : 'Refresh from device'}
+            {refreshing ? t('device_info.queueing') : t('device_info.refresh')}
           </button>
         </div>
       )}
       {!info && !error && (
-        <p className="text-sm text-gray-400 text-center py-8">Loading…</p>
+        <p className="text-sm text-gray-400 text-center py-8">{t('common.loading')}</p>
       )}
       {info && (
         <>
-          <Section title="Identity">
-            <Row label="Serial Number" value={info.serial_number} />
-            <Row label="Device Name" value={info.device_name} />
-            <Row label="Platform" value={info.platform} />
-            <Row label="Firmware" value={info.firmware_version} />
+          <Section title={t('device_info.identity')}>
+            <Row label={t('device_info.serial_number')} value={info.serial_number} />
+            <Row label={t('device_info.device_name')} value={info.device_name} />
+            <Row label={t('device_info.platform')} value={info.platform} />
+            <Row label={t('device_info.firmware')} value={info.firmware_version} />
             <Row label="MAC" value={info.mac} />
           </Section>
-          <Section title="Biometrics">
-            <Row label="FP Version" value={info.fp_version} />
-            <Row label="Face Version" value={info.face_version} />
-            <Row label="PIN Width" value={info.pin_width} />
+          <Section title={t('device_info.biometrics')}>
+            <Row label={t('device_info.fp_version')} value={info.fp_version} />
+            <Row label={t('device_info.face_version')} value={info.face_version} />
+            <Row label={t('device_info.pin_width')} value={info.pin_width} />
           </Section>
-          <Section title="Network">
+          <Section title={t('device_info.network')}>
             <Row label="IP" value={info.network?.ip} />
-            <Row label="Mask" value={info.network?.mask} />
-            <Row label="Gateway" value={info.network?.gateway} />
+            <Row label={t('device_info.mask')} value={info.network?.mask} />
+            <Row label={t('device_info.gateway')} value={info.network?.gateway} />
           </Section>
 
           {/* The two transports genuinely know different things. The SDK reads
@@ -120,27 +122,27 @@ export default function DeviceInfoDrawer({ device, onClose, showToast }) {
               50". An access-control terminal also has doors, which is the one
               fact a door command depends on. */}
           {lastKnown ? (
-            <Section title="Access Hardware">
-              <Row label="Doors" value={info.doors} />
-              <Row label="Readers" value={info.readers} />
-              <Row label="Aux Outputs" value={info.aux_outputs} />
+            <Section title={t('device_info.access_hardware')}>
+              <Row label={t('device_info.doors')} value={info.doors} />
+              <Row label={t('device_info.readers')} value={info.readers} />
+              <Row label={t('device_info.aux_outputs')} value={info.aux_outputs} />
             </Section>
           ) : null}
 
-          <Section title="Capacity">
+          <Section title={t('device_info.capacity')}>
             {lastKnown ? (
               <>
-                <Row label="Max Users" value={info.sizes?.users_cap} />
-                <Row label="Max Records" value={info.sizes?.rec_cap} />
-                <Row label="Fingers / User" value={info.sizes?.fingers_cap} />
+                <Row label={t('device_info.max_users')} value={info.sizes?.users_cap} />
+                <Row label={t('device_info.max_records')} value={info.sizes?.rec_cap} />
+                <Row label={t('device_info.fingers_per_user')} value={info.sizes?.fingers_cap} />
               </>
             ) : (
               <>
-                <Row label="Users" value={`${info.sizes?.users} / ${info.sizes?.users_cap}`} />
-                <Row label="Fingers" value={`${info.sizes?.fingers} / ${info.sizes?.fingers_cap}`} />
-                <Row label="Records" value={`${info.sizes?.records} / ${info.sizes?.rec_cap}`} />
-                <Row label="Cards" value={info.sizes?.cards} />
-                <Row label="Faces" value={info.sizes?.faces} />
+                <Row label={t('device_info.users')} value={`${info.sizes?.users} / ${info.sizes?.users_cap}`} />
+                <Row label={t('device_info.fingers')} value={`${info.sizes?.fingers} / ${info.sizes?.fingers_cap}`} />
+                <Row label={t('device_info.records')} value={`${info.sizes?.records} / ${info.sizes?.rec_cap}`} />
+                <Row label={t('device_info.cards')} value={info.sizes?.cards} />
+                <Row label={t('device_info.faces')} value={info.sizes?.faces} />
               </>
             )}
           </Section>

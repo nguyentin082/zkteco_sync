@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n, { serverMessage } from '../i18n'
 import { api } from '../api'
+import { formatDuration } from '../format'
 import Drawer from './Drawer'
 import RevocationCard from './RevocationCard'
 
 const PRESETS = [
-  { label: 'Reboot', value: 'REBOOT' },
-  { label: 'Sync Time', value: 'DATE' },
-  { label: 'Enable', value: 'ENABLE' },
-  { label: 'Disable', value: 'DISABLE' },
+  { key: 'reboot', value: 'REBOOT' },
+  { key: 'sync_time', value: 'DATE' },
+  { key: 'enable', value: 'ENABLE' },
+  { key: 'disable', value: 'DISABLE' },
 ]
 
 // The two commands E8 sends to revoke one person (`DATA DELETE user` and
@@ -35,23 +38,15 @@ function relativeTime(iso) {
   return Date.now() - new Date(stamp).getTime() // positive = past, negative = future
 }
 
-function formatDuration(ms) {
-  const seconds = Math.max(0, Math.floor(Math.abs(ms) / 1000))
-  if (seconds < 60) return `${seconds}s`
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`
-  return `${Math.floor(seconds / 86400)}d`
-}
-
 const since = (iso) => {
   const d = relativeTime(iso)
-  return d == null ? '' : `${formatDuration(d)} ago`
+  return d == null ? '' : i18n.t('time.ago', { time: formatDuration(d / 1000) })
 }
 
 const until = (iso) => {
   const d = relativeTime(iso)
   if (d == null) return ''
-  return d > 0 ? 'due now' : `in ${formatDuration(d)}`
+  return d > 0 ? i18n.t('commands.due_now') : i18n.t('time.in', { time: formatDuration(d / 1000) })
 }
 
 const PILL_TONES = {
@@ -88,6 +83,7 @@ function Pill({ tone = 'gray', children }) {
 // there would be a wrong verdict on a door command, which is the whole reason
 // this distinction exists (E11).
 function historyOutcome(row) {
+  const t = i18n.t
   const verdict =
     row.verdict ||
     (row.outcome === 'acknowledged'
@@ -107,20 +103,21 @@ function historyOutcome(row) {
     // the difference between an operator seeing that a query ran and returned
     // nothing, and them seeing a bare "Acknowledged" and assuming data arrived.
     return {
+      verdict,
       label: row.verdict_detail
-        ? `Acknowledged — ${row.verdict_detail}`
-        : 'Acknowledged',
+        ? t('commands.outcome.acknowledged_detail', { detail: row.verdict_detail })
+        : t('commands.outcome.acknowledged'),
       tone: 'green',
     }
   }
   if (verdict === 'refused') {
-    return { label: `Refused — code ${row.return_code}`, tone: 'red' }
+    return { verdict, label: t('commands.outcome.refused', { code: row.return_code }), tone: 'red' }
   }
   if (verdict === 'unconfirmed') {
-    return { label: `Unconfirmed — code ${row.return_code}`, tone: 'amber' }
+    return { verdict, label: t('commands.outcome.unconfirmed', { code: row.return_code }), tone: 'amber' }
   }
-  if (verdict === 'cancelled') return { label: 'Cancelled', tone: 'gray' }
-  return { label: 'Gave up — no reply', tone: 'amber' }
+  if (verdict === 'cancelled') return { verdict, label: t('commands.outcome.cancelled'), tone: 'gray' }
+  return { verdict, label: t('commands.outcome.gave_up'), tone: 'amber' }
 }
 
 function Section({ title, hint, children }) {
@@ -134,6 +131,7 @@ function Section({ title, hint, children }) {
 }
 
 export default function CommandsDrawer({ device, onClose, showToast, onChange }) {
+  const { t } = useTranslation()
   const sn = device.serial_number
 
   const [command, setCommand] = useState('')
@@ -163,11 +161,11 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
       setHistory(hs)
       setRevocationGroups(rv)
     } catch {
-      showToast('Failed to load the command queue', 'error')
+      showToast(t('commands.load_failed'), 'error')
     } finally {
       setLoadingLists(false)
     }
-  }, [sn, showToast])
+  }, [sn, showToast, t])
 
   useEffect(() => {
     refresh()
@@ -181,7 +179,7 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
     setSending(true)
     try {
       await api.devices.queueCommand(sn, command.trim())
-      showToast('Command queued')
+      showToast(t('commands.queued'))
       setCommand('')
       refresh()
       onChange?.()
@@ -197,8 +195,8 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
     setBusy((b) => ({ ...b, [`out-${row.id}`]: true }))
     try {
       const result = await api.devices.cancelCommand(sn, row.id)
-      showToast(result.was_sent ? 'Cancelled — record only' : 'Cancelled before delivery')
-      setNotice({ type: result.was_sent ? 'warning' : 'success', text: result.message })
+      showToast(result.was_sent ? t('commands.cancelled_record_only') : t('commands.cancelled_before_delivery'))
+      setNotice({ type: result.was_sent ? 'warning' : 'success', text: serverMessage(result) })
       await refresh()
       onChange?.()
     } catch (err) {
@@ -226,8 +224,8 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
     setBusy((b) => ({ ...b, [`log-${row.id}`]: true }))
     try {
       const result = await api.devices.retryCommand(sn, row.id)
-      showToast('Requeued')
-      setNotice({ type: result.was_device_refusal ? 'warning' : 'info', text: result.message })
+      showToast(t('commands.requeued'))
+      setNotice({ type: result.was_device_refusal ? 'warning' : 'info', text: serverMessage(result) })
       await refresh()
       onChange?.()
     } catch (err) {
@@ -256,7 +254,7 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
   // BOTH `DATA DELETE` commands atomically — never the per-command cancel
   // above, which could leave one half of a revocation behind (E13).
   function handleRevocationCancelled(res) {
-    setNotice({ type: 'success', text: res?.message || 'Revocation cancelled' })
+    setNotice({ type: 'success', text: serverMessage(res, t('commands.revocation_cancelled')) })
     refresh()
     onChange?.()
   }
@@ -266,7 +264,7 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
   }
 
   return (
-    <Drawer title="Commands" onClose={onClose} width="max-w-lg">
+    <Drawer title={t('commands.title')} onClose={onClose} width="max-w-lg">
       {notice && (
         <div
           className={`mb-4 text-xs rounded-lg px-3 py-2 border flex items-start justify-between gap-2 ${
@@ -281,6 +279,7 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
           <button
             type="button"
             onClick={() => setNotice(null)}
+            aria-label={t('common.close')}
             className="opacity-60 hover:opacity-100 shrink-0"
           >
             ✕
@@ -288,7 +287,7 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
         </div>
       )}
 
-      <Section title="Queue a command" hint="Delivered on the device's next heartbeat poll.">
+      <Section title={t('commands.queue_title')} hint={t('commands.queue_hint')}>
         <div className="flex flex-wrap gap-2 mb-3">
           {PRESETS.map((p) => (
             <button
@@ -297,7 +296,7 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
               onClick={() => setCommand(p.value)}
               className="text-xs border border-gray-300 text-gray-600 hover:bg-gray-50 px-3 py-1 rounded-full transition-colors"
             >
-              {p.label}
+              {t(`commands.presets.${p.key}`)}
             </button>
           ))}
         </div>
@@ -323,7 +322,7 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
             disabled={sending}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
           >
-            {sending ? 'Queuing…' : 'Queue Command'}
+            {sending ? t('commands.queuing') : t('commands.queue_button')}
           </button>
         </form>
       </Section>
@@ -335,22 +334,21 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
           `DATA DELETE` command — the duplication that used to let an
           operator cancel half a revocation with one click. */}
       {revocationGroups.length > 0 && (
-        <Section title="Revocations not yet confirmed at the door">
+        <Section title={t('commands.revocations_title')}>
           <div className="border-2 border-red-300 bg-red-50 rounded-lg p-3 space-y-2">
             <p className="text-xs font-semibold text-red-800">
-              The person named below can still open this door until the device
-              confirms it collected this. If the device is offline it waits.
+              {t('commands.revocations_warning')}
             </p>
             {revocationGroups.map((group) => (
               <RevocationCard
                 key={`${group.device_sn}:${group.user_id}`}
                 group={group}
-                title={`Pin ${group.user_id}`}
+                title={t('commands.pin', { pin: group.user_id })}
                 cancelLabel={
                   group.still_open
-                    ? `Cancel — Pin ${group.user_id} keeps access to this door`
+                    ? t('commands.cancel_keeps_access', { pin: group.user_id })
                     : group.user?.outstanding || group.userauthorize?.outstanding
-                      ? 'Cancel the leftover delete — door permission record only'
+                      ? t('commands.cancel_leftover')
                       : null
                 }
                 onCancelled={handleRevocationCancelled}
@@ -362,44 +360,43 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
       )}
 
       <Section
-        title="Outstanding"
-        hint="Pending means the device has not polled yet — normal for an offline terminal, not a failure. Sent means delivered and awaiting confirmation, retrying on backoff."
+        title={t('commands.outstanding_title')}
+        hint={t('commands.outstanding_hint')}
       >
         {loadingLists ? (
-          <p className="text-xs text-gray-400">Loading…</p>
+          <p className="text-xs text-gray-400">{t('common.loading')}</p>
         ) : otherOutbox.length === 0 ? (
-          <p className="text-xs text-gray-400">Nothing outstanding. This device owes nothing right now.</p>
+          <p className="text-xs text-gray-400">{t('commands.nothing_outstanding')}</p>
         ) : (
           <div className="space-y-2">
             {otherOutbox.map((row) => (
               <div key={row.id} className="bg-gray-50 rounded-lg px-3 py-2.5 text-sm">
                 <div className="flex items-center gap-2 mb-1">
                   <Pill tone={row.status === 'sent' ? 'blue' : 'gray'}>
-                    {row.status === 'sent' ? 'Sent' : 'Pending'}
+                    {row.status === 'sent' ? t('commands.status_sent') : t('commands.status_pending')}
                   </Pill>
                   <span className="text-xs text-gray-500 flex-1">
                     {row.status === 'sent'
-                      ? `attempt ${row.attempts} · retries ${until(row.next_attempt_at)} · first sent ${since(row.sent_at)}`
-                      : `waiting for the device to poll · queued ${since(row.created_at)}`}
+                      ? t('commands.sent_line', { attempts: row.attempts, retry: until(row.next_attempt_at), sent: since(row.sent_at) })
+                      : t('commands.pending_line', { queued: since(row.created_at) })}
                   </span>
                 </div>
                 <p className="text-xs font-mono text-gray-500 truncate">{row.command}</p>
                 {confirmCancelId === row.id ? (
                   <div className="mt-2 text-xs bg-amber-50 border border-amber-200 rounded px-2 py-1.5 text-amber-800">
-                    Already sent to the device at least once — cancelling only removes
-                    our record, it does not recall it.
+                    {t('commands.cancel_sent_warning')}
                     <div className="flex gap-3 mt-1.5">
                       <button
                         onClick={() => doCancel(row)}
                         className="text-red-700 font-semibold hover:underline"
                       >
-                        Cancel our record anyway
+                        {t('commands.cancel_anyway')}
                       </button>
                       <button
                         onClick={() => setConfirmCancelId(null)}
                         className="text-gray-500 hover:underline"
                       >
-                        Never mind
+                        {t('commands.never_mind')}
                       </button>
                     </div>
                   </div>
@@ -410,10 +407,10 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
                     className="mt-1.5 text-xs text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-40 transition-colors"
                   >
                     {busy[`out-${row.id}`]
-                      ? 'Cancelling…'
+                      ? t('common.cancelling')
                       : row.status === 'sent'
-                        ? 'Cancel — will not recall it'
-                        : 'Cancel — never sent'}
+                        ? t('commands.cancel_sent')
+                        : t('commands.cancel_pending')}
                   </button>
                 )}
               </div>
@@ -423,13 +420,13 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
       </Section>
 
       <Section
-        title="History"
-        hint="What actually happened, read from the outcome — not from the queue being empty."
+        title={t('commands.history_title')}
+        hint={t('commands.history_hint')}
       >
         {loadingLists ? (
-          <p className="text-xs text-gray-400">Loading…</p>
+          <p className="text-xs text-gray-400">{t('common.loading')}</p>
         ) : history.length === 0 ? (
-          <p className="text-xs text-gray-400">No concluded commands yet.</p>
+          <p className="text-xs text-gray-400">{t('commands.no_history')}</p>
         ) : (
           <div className="space-y-2">
             {history.map((row) => {
@@ -440,9 +437,9 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
                 <div key={row.id} className="bg-gray-50 rounded-lg px-3 py-2.5 text-sm">
                   <div className="flex items-center gap-2 mb-1">
                     <Pill tone={outcome.tone}>{outcome.label}</Pill>
-                    {revocation && <Pill tone="red">revocation</Pill>}
+                    {revocation && <Pill tone="red">{t('commands.revocation_pill')}</Pill>}
                     <span className="text-xs text-gray-400 flex-1 text-right">
-                      concluded {since(row.concluded_at)}
+                      {t('commands.concluded', { time: since(row.concluded_at) })}
                     </span>
                   </div>
                   <p className="text-xs font-mono text-gray-500 truncate">{row.command}</p>
@@ -452,21 +449,21 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
                   {canRetry && (
                     confirmRetryId === row.id ? (
                       <div className="mt-2 text-xs bg-amber-50 border border-amber-200 rounded px-2 py-1.5 text-amber-800">
-                        {outcome.label.startsWith('Refused')
-                          ? `The device refused this with Return=${row.return_code} — unless something changed at the device it will very likely refuse again, unchanged.`
-                          : `The device answered Return=${row.return_code} last time, which this system cannot read as either success or refusal — so this command may already have worked. Sending it again is safe, but it is not a retry of a known failure.`}
+                        {outcome.verdict === 'refused'
+                          ? t('commands.retry_refused_warning', { code: row.return_code })
+                          : t('commands.retry_unconfirmed_warning', { code: row.return_code })}
                         <div className="flex gap-3 mt-1.5">
                           <button
                             onClick={() => doRetry(row)}
                             className="text-amber-900 font-semibold hover:underline"
                           >
-                            Retry anyway
+                            {t('commands.retry_anyway')}
                           </button>
                           <button
                             onClick={() => setConfirmRetryId(null)}
                             className="text-gray-500 hover:underline"
                           >
-                            Never mind
+                            {t('commands.never_mind')}
                           </button>
                         </div>
                       </div>
@@ -476,7 +473,7 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
                         disabled={!!busy[`log-${row.id}`]}
                         className="mt-1.5 text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50 disabled:opacity-40 transition-colors"
                       >
-                        {busy[`log-${row.id}`] ? 'Requeuing…' : 'Retry'}
+                        {busy[`log-${row.id}`] ? t('commands.requeuing') : t('commands.retry')}
                       </button>
                     )
                   )}

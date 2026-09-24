@@ -17,6 +17,7 @@ mimetypes.add_type("application/javascript", ".mjs")
 mimetypes.add_type("text/css", ".css")
 
 from app import config
+from app import errors
 from app.database import Base, engine
 from app.middleware import (
     MaxBodySizeMiddleware,
@@ -196,6 +197,8 @@ def healthz():
     """
     return {"status": "ok"}
 
+
+errors.install(app)
 
 app.include_router(auth.router)
 app.include_router(adms.router)

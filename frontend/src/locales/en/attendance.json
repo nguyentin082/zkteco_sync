@@ -1,0 +1,48 @@
+{
+  "derived": {
+    "check_in": "Check In",
+    "check_out": "Check Out",
+    "interim": "Interim",
+    "in_only": "Check In · no Out",
+    "out_only": "Check Out · no In"
+  },
+  "derived_hint": {
+    "check_in": "Earliest punch of this day",
+    "check_out": "Latest punch of this day",
+    "interim": "Neither the first nor the last punch of this day",
+    "in_only": "The only punch of this day, in the first half of the shift — no check-out was recorded",
+    "out_only": "The only punch of this day, in the second half of the shift — no check-in was recorded"
+  },
+  "device_status": {
+    "0": "Check In",
+    "1": "Check Out",
+    "2": "Break Out",
+    "3": "Break In",
+    "4": "OT In",
+    "5": "OT Out"
+  },
+  "status_code": "Status {{status}}",
+  "hint_with_device": "{{hint}}. Device reported: {{device}}",
+  "device_reported": "Device reported: {{device}}",
+  "records_one": "{{formatted}} record",
+  "records_other": "{{formatted}} records",
+  "export_nothing": "Nothing matches the current filter",
+  "export_title": "The monthly timesheet: a row per person per day, scored against the shift — hours, lateness, absences",
+  "exporting": "Exporting…",
+  "export": "Export timesheet",
+  "device": "Device",
+  "all_devices": "All devices",
+  "employee": "Employee",
+  "all_employees": "All employees",
+  "from": "From",
+  "to": "To",
+  "hidden_title": "Failed scans (PIN 0) and punches by deleted employees. Nothing is deleted, and the Excel timesheet always keeps the latter.",
+  "show_hidden": "Show hidden records",
+  "no_records": "No records found.",
+  "timestamp": "Timestamp",
+  "device_local_time": "device local time",
+  "status": "Status",
+  "from_days_punches": "from the day’s punches",
+  "source": "Source",
+  "unlabelled": "unlabelled"
+}

@@ -12,7 +12,8 @@
 // The diagram is also the picker: clicking a finger selects it, and the
 // parent decides what that means (delete a stored one, enrol an empty one).
 
-import { FINGER_NAMES } from '../fingers'
+import { useTranslation } from 'react-i18next'
+import { fingerName } from '../fingers'
 
 // One hand, drawn as a left hand with the thumb on the right. The right hand
 // is the same shape mirrored. Coordinates are in a 170×200 box.
@@ -30,7 +31,6 @@ const PALM = 'M 14 128 H 132 V 178 Q 132 198 112 198 H 40 Q 14 198 14 172 Z'
 const LEFT_IDS  = { little: 0, ring: 1, middle: 2, index: 3, thumb: 4 }
 const RIGHT_IDS = { little: 9, ring: 8, middle: 7, index: 6, thumb: 5 }
 
-const STATE_LABEL = { valid: ' — enrolled', invalid: ' — stored, invalid', empty: ' — not enrolled' }
 
 const FILL = {
   valid: 'fill-emerald-400',
@@ -50,15 +50,16 @@ function fingerClass(state, selected) {
 }
 
 function Hand({ ids, mirrored, stateOf, selected, onSelect }) {
+  const { t } = useTranslation()
   const digit = (fid, shape) => (
     <g
       key={fid}
       onClick={() => onSelect?.(fid)}
       className={onSelect ? 'cursor-pointer' : ''}
       role={onSelect ? 'button' : undefined}
-      aria-label={FINGER_NAMES[fid]}
+      aria-label={fingerName(fid)}
     >
-      <title>{`${FINGER_NAMES[fid]}${STATE_LABEL[stateOf(fid)]}`}</title>
+      <title>{`${fingerName(fid)} — ${t(`hands.state.${stateOf(fid)}`)}`}</title>
       {shape}
     </g>
   )
@@ -98,25 +99,26 @@ function Hand({ ids, mirrored, stateOf, selected, onSelect }) {
  * @param onSelect   called with a finger id; omit to render read-only
  */
 export default function HandsDiagram({ templates = [], selected = null, onSelect }) {
-  const byId = new Map(templates.map((t) => [t.finger_id, t]))
+  const { t } = useTranslation()
+  const byId = new Map(templates.map((tpl) => [tpl.finger_id, tpl]))
   const stateOf = (fid) => {
-    const t = byId.get(fid)
-    if (!t) return 'empty'
-    return t.valid ? 'valid' : 'invalid'
+    const tpl = byId.get(fid)
+    if (!tpl) return 'empty'
+    return tpl.valid ? 'valid' : 'invalid'
   }
 
   return (
     <svg
       viewBox="0 0 370 216"
       className="w-full max-w-sm mx-auto block select-none"
-      aria-label="Enrolled fingers"
+      aria-label={t('hands.label')}
     >
       <Hand ids={LEFT_IDS} stateOf={stateOf} selected={selected} onSelect={onSelect} />
       <g transform="translate(200 0)">
         <Hand ids={RIGHT_IDS} mirrored stateOf={stateOf} selected={selected} onSelect={onSelect} />
       </g>
-      <text x="85" y="212" textAnchor="middle" className="fill-gray-400 text-[11px]">Left</text>
-      <text x="285" y="212" textAnchor="middle" className="fill-gray-400 text-[11px]">Right</text>
+      <text x="85" y="212" textAnchor="middle" className="fill-gray-400 text-[11px]">{t('hands.left')}</text>
+      <text x="285" y="212" textAnchor="middle" className="fill-gray-400 text-[11px]">{t('hands.right')}</text>
     </svg>
   )
 }

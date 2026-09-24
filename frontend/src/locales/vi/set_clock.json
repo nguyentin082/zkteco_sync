@@ -1,0 +1,13 @@
+{
+  "updated": "Đã cập nhật giờ",
+  "title": "Đặt giờ thiết bị",
+  "current_time": "Giờ hiện tại trên thiết bị",
+  "acc_unreadable": "Không đọc được trên máy kiểm soát ra vào — giao thức không có lệnh hỏi giờ hiện tại của máy. Việc đặt giờ bên dưới vẫn hoạt động và không cần biết giá trị hiện tại.",
+  "acc_note_tz": "Giờ được đặt theo múi giờ riêng của máy này ({{tz}}), để màn hình và dữ liệu chấm công của máy luôn khớp nhau. Lệnh được đưa vào hàng đợi và có hiệu lực khi máy kết nối lần tới.",
+  "acc_note": "Giờ được đặt theo múi giờ riêng của máy này, để màn hình và dữ liệu chấm công của máy luôn khớp nhau. Lệnh được đưa vào hàng đợi và có hiệu lực khi máy kết nối lần tới.",
+  "sync_now": "Đồng bộ theo giờ máy chủ (ngay bây giờ)",
+  "custom": "Đặt giờ tùy chỉnh",
+  "date_time": "Ngày & giờ",
+  "setting": "Đang đặt…",
+  "submit": "Đặt giờ"
+}

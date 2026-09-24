@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { api } from '../api'
 import { useAuth } from '../auth'
+import LanguageSwitcher from '../components/LanguageSwitcher'
 
 export default function ChangePassword() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { user, refresh } = useAuth()
   const forced = !!user?.must_change_password
@@ -15,7 +18,7 @@ export default function ChangePassword() {
     e.preventDefault()
     setError('')
     if (form.next !== form.confirm) {
-      setError('The two new passwords do not match')
+      setError(t('auth.passwords_do_not_match'))
       return
     }
     setSaving(true)
@@ -33,19 +36,22 @@ export default function ChangePassword() {
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
       <div className="bg-white rounded-2xl shadow-lg w-full max-w-sm p-8">
+        <div className="flex justify-end -mt-4 -mr-4 mb-2">
+          <LanguageSwitcher />
+        </div>
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-semibold text-gray-900">Change password</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">{t('auth.change_password')}</h1>
           <p className="text-sm text-gray-500 mt-1">
             {forced
-              ? 'This account still uses its setup password. Choose a new one to continue.'
-              : `Signed in as ${user?.username || ''}`}
+              ? t('auth.setup_password_notice')
+              : t('auth.signed_in_as', { username: user?.username || '' })}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Current password
+              {t('auth.current_password')}
             </label>
             <input
               type="password"
@@ -59,7 +65,7 @@ export default function ChangePassword() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              New password
+              {t('auth.new_password')}
             </label>
             <input
               type="password"
@@ -69,12 +75,12 @@ export default function ChangePassword() {
               onChange={(e) => setForm({ ...form, next: e.target.value })}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <p className="text-xs text-gray-400 mt-1">At least 8 characters.</p>
+            <p className="text-xs text-gray-400 mt-1">{t('auth.min_length', { min: 8 })}</p>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Confirm new password
+              {t('auth.confirm_new_password')}
             </label>
             <input
               type="password"
@@ -96,7 +102,7 @@ export default function ChangePassword() {
             disabled={saving}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-lg px-4 py-2 text-sm transition-colors"
           >
-            {saving ? 'Saving…' : 'Change password'}
+            {saving ? t('common.saving') : t('auth.change_password')}
           </button>
         </form>
       </div>

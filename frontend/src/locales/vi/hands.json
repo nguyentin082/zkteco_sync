@@ -1,0 +1,10 @@
+{
+  "label": "Các ngón đã đăng ký",
+  "left": "Trái",
+  "right": "Phải",
+  "state": {
+    "valid": "đã đăng ký",
+    "invalid": "đã lưu, không hợp lệ",
+    "empty": "chưa đăng ký"
+  }
+}

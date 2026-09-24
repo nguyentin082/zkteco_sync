@@ -49,6 +49,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.errors import CodedError
 from app.models import (
     BiometricTemplate, DeviceEmployee, Employee, EmployeePhoto,
     FingerprintTemplate,
@@ -244,10 +245,12 @@ def create_employee(db: Session, user_id, *, name="", privilege=0, card=""):
     """
     user_id = str(user_id or "").strip()[:_USER_ID_LIMIT]
     if not user_id:
-        raise ValueError("A user ID (PIN) is required")
+        raise CodedError("employee.user_id_required", "A user ID (PIN) is required")
 
     if db.query(Employee).filter_by(user_id=user_id).first():
-        raise ValueError(f"User ID {user_id} already exists")
+        raise CodedError(
+            "employee.user_id_taken", f"User ID {user_id} already exists", user_id=user_id
+        )
 
     emp = Employee(
         user_id=user_id,

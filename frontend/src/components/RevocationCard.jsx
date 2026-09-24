@@ -1,5 +1,8 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from '../i18n'
 import { api } from '../api'
+import { formatDuration } from '../format'
 
 // One revocation, one card (E13). `group` is a RevocationGroupOut from
 // GET /devices/{sn}/revocations: the two `DATA DELETE` commands E8 sends
@@ -13,30 +16,27 @@ import { api } from '../api'
 // outstanding; one refused, one pending). Averaging that into one status
 // line would hide exactly the half-revocation this unit exists to surface.
 
-const ROLE_NAME = { user: 'user record', userauthorize: 'door permission' }
-
 function roleLine(role, entry) {
-  const name = ROLE_NAME[role]
-  if (!entry) return `${name}: never queued`
+  const t = i18n.t
+  const name = t(`revocation.role.${role}`)
+  const line = (key) => t(`revocation.line.${key}`, { name, code: entry?.return_code })
+  if (!entry) return line('never_queued')
   if (entry.outstanding) {
-    return entry.state === 'sent'
-      ? `${name}: delivered to the device — waiting for it to confirm`
-      : `${name}: waiting for the device to poll`
+    return entry.state === 'sent' ? line('delivered_waiting') : line('waiting_poll')
   }
   switch (entry.state) {
     case 'acknowledged':
-      return `${name}: confirmed by the device`
+      return line('confirmed')
     case 'refused':
-      return `${name}: refused by the device (Return=${entry.return_code})`
+      return line('refused')
     case 'unconfirmed':
       // E11: a positive code this system cannot read. Not a refusal, not a
       // confirmation — say exactly that, nothing stronger.
-      return `${name}: answered with a code this system cannot read ` +
-        `(Return=${entry.return_code}) — not a refusal, not a confirmation`
+      return line('unconfirmed')
     case 'cancelled':
-      return `${name}: cancelled before delivery`
+      return line('cancelled')
     default:
-      return `${name}: never acknowledged — the server gave up on it`
+      return line('gave_up')
   }
 }
 
@@ -45,14 +45,11 @@ function roleLine(role, entry) {
 function since(iso) {
   if (!iso) return ''
   const stamp = /(Z|[+-]\d\d:?\d\d)$/.test(iso) ? iso : `${iso}Z`
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(stamp).getTime()) / 1000))
-  if (seconds < 60) return `${seconds}s`
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`
-  return `${Math.floor(seconds / 86400)}d`
+  return formatDuration((Date.now() - new Date(stamp).getTime()) / 1000)
 }
 
 export default function RevocationCard({ group, title, cancelLabel, onCancelled, onError }) {
+  const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const { user, userauthorize, split, still_open } = group
 
@@ -83,7 +80,7 @@ export default function RevocationCard({ group, title, cancelLabel, onCancelled,
             still_open ? 'bg-red-600 text-white' : 'bg-amber-100 text-amber-800'
           }`}
         >
-          {still_open ? 'Still open' : 'Clearing up'}
+          {still_open ? t('revocation.still_open') : t('revocation.clearing_up')}
         </span>
       </div>
 
@@ -95,9 +92,9 @@ export default function RevocationCard({ group, title, cancelLabel, onCancelled,
       ) : (
         <p className={`text-xs mt-1 ${still_open ? 'text-red-700' : 'text-amber-800'}`}>
           {user.state === 'sent'
-            ? 'Handed to the device — waiting for it to confirm the removal'
-            : 'Waiting for the device to poll. Nothing has reached it yet.'}
-          {outstanding?.created_at && <> · outstanding {since(outstanding.created_at)}</>}
+            ? t('revocation.handed_over')
+            : t('revocation.waiting_poll')}
+          {outstanding?.created_at && <> · {t('revocation.outstanding_for', { time: since(outstanding.created_at) })}</>}
         </p>
       )}
 
@@ -107,7 +104,7 @@ export default function RevocationCard({ group, title, cancelLabel, onCancelled,
           disabled={busy}
           className="mt-2 text-xs text-gray-600 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-40 transition-colors"
         >
-          {busy ? 'Cancelling…' : cancelLabel}
+          {busy ? t('common.cancelling') : cancelLabel}
         </button>
       )}
     </div>

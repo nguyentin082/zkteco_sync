@@ -1,0 +1,21 @@
+{
+  "role": {
+    "user": "hồ sơ người dùng",
+    "userauthorize": "quyền ra cửa"
+  },
+  "line": {
+    "never_queued": "{{name}}: chưa từng vào hàng đợi",
+    "delivered_waiting": "{{name}}: đã gửi tới thiết bị — đang chờ xác nhận",
+    "waiting_poll": "{{name}}: đang chờ thiết bị kết nối",
+    "confirmed": "{{name}}: thiết bị đã xác nhận",
+    "refused": "{{name}}: thiết bị từ chối (Return={{code}})",
+    "unconfirmed": "{{name}}: thiết bị trả về mã hệ thống không đọc được (Return={{code}}) — không phải từ chối, cũng không phải xác nhận",
+    "cancelled": "{{name}}: đã hủy trước khi gửi",
+    "gave_up": "{{name}}: chưa từng được xác nhận — máy chủ đã bỏ cuộc"
+  },
+  "still_open": "Vẫn còn mở",
+  "clearing_up": "Đang dọn dẹp",
+  "handed_over": "Đã giao cho thiết bị — đang chờ xác nhận việc gỡ bỏ",
+  "waiting_poll": "Đang chờ thiết bị kết nối. Chưa có gì tới được thiết bị.",
+  "outstanding_for": "đang chờ {{time}}"
+}

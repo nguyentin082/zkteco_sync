@@ -1,0 +1,10 @@
+{
+  "label": "Enrolled fingers",
+  "left": "Left",
+  "right": "Right",
+  "state": {
+    "valid": "enrolled",
+    "invalid": "stored, invalid",
+    "empty": "not enrolled"
+  }
+}

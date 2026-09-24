@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { api } from '../api'
 import Drawer from './Drawer'
 
@@ -10,6 +11,7 @@ import Drawer from './Drawer'
 // handled write-only — the server never tells the browser what it is, only
 // whether one is set.
 export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToast }) {
+  const { t } = useTranslation()
   const [enabled, setEnabled] = useState(device.ip_check_enabled)
   const [cidrs, setCidrs] = useState(device.allowed_cidrs || '')
   const [saving, setSaving] = useState(false)
@@ -26,7 +28,7 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
     setSaving(true)
     try {
       await api.devices.update(device.serial_number, payload)
-      showToast('IP allowlist updated')
+      showToast(t('device_security.allowlist_updated'))
       onSaved()
       onClose()
     } catch (err) {
@@ -53,7 +55,7 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
       setCommKeySet(updated.comm_key_set)
       setCommKeyEditing(false)
       setCommKeyInput('')
-      showToast(value === 0 ? 'Comm key cleared' : 'Comm key set')
+      showToast(value === 0 ? t('device_security.key_cleared') : t('device_security.key_set_toast'))
     } catch (err) {
       setCommKeyError(err.message)
     } finally {
@@ -65,19 +67,18 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
     e.preventDefault()
     const value = Number(commKeyInput)
     if (commKeyInput.trim() === '' || !Number.isInteger(value) || value < 0) {
-      setCommKeyError('Enter a whole number (0 or greater)')
+      setCommKeyError(t('device_security.key_invalid'))
       return
     }
     saveCommKey(value)
   }
 
   return (
-    <Drawer title="Device Security" onClose={onClose}>
+    <Drawer title={t('device_security.title')} onClose={onClose}>
       <div className="mb-5 pb-5 border-b border-gray-100">
-        <label className="block text-sm font-medium text-gray-700 mb-1">Comm Key</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1">{t('device_security.comm_key')}</label>
         <p className="text-xs text-gray-400 mb-2">
-          Authenticates the server to the device on TCP 4370. Once set it is never shown
-          again — only whether one is configured.
+          {t('device_security.comm_key_help')}
         </p>
 
         <div className="flex items-center gap-2">
@@ -86,7 +87,7 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
               commKeySet ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-500'
             }`}
           >
-            {commKeySet ? 'Set' : 'Not set'}
+            {commKeySet ? t('device_security.is_set') : t('device_security.not_set')}
           </span>
           {!commKeyEditing && (
             <button
@@ -94,7 +95,7 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
               onClick={() => setCommKeyEditing(true)}
               className="text-xs text-blue-600 hover:text-blue-700"
             >
-              {commKeySet ? 'Change' : 'Set key'}
+              {commKeySet ? t('device_security.change') : t('device_security.set_key')}
             </button>
           )}
           {commKeySet && !commKeyEditing && (
@@ -104,7 +105,7 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
               onClick={() => saveCommKey(0)}
               className="text-xs text-red-600 hover:text-red-700 disabled:opacity-50"
             >
-              Clear
+              {t('common.clear')}
             </button>
           )}
         </div>
@@ -117,7 +118,7 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
               autoComplete="new-password"
               value={commKeyInput}
               onChange={(e) => setCommKeyInput(e.target.value)}
-              placeholder="New comm key"
+              placeholder={t('device_security.new_key')}
               className="input flex-1 font-mono text-xs"
             />
             <button
@@ -125,14 +126,14 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
               disabled={commKeySaving}
               className="text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium px-3 py-1.5 rounded-lg transition-colors"
             >
-              {commKeySaving ? 'Saving…' : 'Save'}
+              {commKeySaving ? t('common.saving') : t('common.save')}
             </button>
             <button
               type="button"
               onClick={() => { setCommKeyEditing(false); setCommKeyInput(''); setCommKeyError('') }}
               className="text-xs text-gray-500 hover:text-gray-700"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
           </form>
         )}
@@ -141,13 +142,15 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
       </div>
 
       <p className="text-sm text-gray-500 mb-4">
-        Restrict <span className="font-mono text-gray-700">{device.serial_number}</span> to
-        pushing attendance only from these addresses. Leave the check off for sites on a
-        dynamic IP.
+        <Trans
+          i18nKey="device_security.restrict_intro"
+          values={{ sn: device.serial_number }}
+          components={{ mono: <span className="font-mono text-gray-700" /> }}
+        />
       </p>
 
       <div className="mb-4 text-sm">
-        <p className="text-gray-500 mb-1">Last push seen from</p>
+        <p className="text-gray-500 mb-1">{t('device_security.last_push_from')}</p>
         <p className="font-mono text-gray-900">{device.last_ip || '—'}</p>
         {device.last_ip && (
           <button
@@ -155,7 +158,7 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
             onClick={() => setCidrs(cidrs ? `${cidrs}, ${device.last_ip}` : device.last_ip)}
             className="mt-1 text-xs text-blue-600 hover:text-blue-700"
           >
-            Add this address
+            {t('device_security.add_address')}
           </button>
         )}
       </div>
@@ -163,7 +166,7 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Allowed CIDRs
+            {t('device_security.allowed_cidrs')}
           </label>
           <textarea
             rows={3}
@@ -173,7 +176,7 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
             className="input w-full font-mono text-xs"
           />
           <p className="mt-1 text-xs text-gray-400">
-            Comma separated. A bare address means that address only.
+            {t('device_security.cidrs_help')}
           </p>
         </div>
 
@@ -183,7 +186,7 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
             checked={enabled}
             onChange={(e) => setEnabled(e.target.checked)}
           />
-          Enforce this allowlist
+          {t('device_security.enforce')}
         </label>
 
         {error && (
@@ -198,7 +201,7 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
             disabled={saving}
             className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
           >
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? t('common.saving') : t('common.save')}
           </button>
           <button
             type="button"
@@ -206,7 +209,7 @@ export default function DeviceSecurityDrawer({ device, onClose, onSaved, showToa
             disabled={saving}
             className="px-4 border border-gray-200 hover:bg-gray-50 disabled:opacity-50 text-gray-700 text-sm font-medium py-2 rounded-lg transition-colors"
           >
-            Clear
+            {t('common.clear')}
           </button>
         </div>
       </form>

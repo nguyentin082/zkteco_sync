@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { api } from '../api'
+import { serverMessage } from '../i18n'
 import Drawer from './Drawer'
 
 // The bulk endpoint names a deliberate skip in `errors` alongside real
@@ -11,6 +13,7 @@ import Drawer from './Drawer'
 const isSkipReason = (line) => /revocation/i.test(line)
 
 export default function DeviceUsersDrawer({ device, onClose, showToast }) {
+  const { t } = useTranslation()
   const [allEmployees, setAllEmployees] = useState([])
   const [enrolledIds, setEnrolledIds] = useState(new Set())
   const [selected, setSelected] = useState(new Set())
@@ -71,9 +74,9 @@ export default function DeviceUsersDrawer({ device, onClose, showToast }) {
       // already carries the honest command count and drain estimate.
       if (result.pushed.length > 0) {
         if (result.transport === 'adms_queue') {
-          showToast(`${result.message} Track real delivery in the Commands drawer.`)
+          showToast(`${serverMessage(result)} ${t('device_users.track_delivery')}`)
         } else {
-          showToast(`${result.pushed.length} user(s) pushed to ${device.name || device.serial_number}`)
+          showToast(t('device_users.pushed', { count: result.pushed.length, device: device.name || device.serial_number }))
         }
       }
 
@@ -91,8 +94,8 @@ export default function DeviceUsersDrawer({ device, onClose, showToast }) {
   const someChecked = selected.size > 0 && selected.size < allEmployees.length
 
   return (
-    <Drawer title="Device Users" onClose={onClose}>
-      {loading && <p className="text-sm text-gray-400 text-center py-8">Loading…</p>}
+    <Drawer title={t('device_users.title')} onClose={onClose}>
+      {loading && <p className="text-sm text-gray-400 text-center py-8">{t('common.loading')}</p>}
 
       {!loading && loadError && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4 whitespace-pre-wrap">
@@ -103,14 +106,16 @@ export default function DeviceUsersDrawer({ device, onClose, showToast }) {
       {!loading && !loadError && (
         <>
           <p className="text-xs text-gray-500 mb-3">
-            Select employees to push to{' '}
-            <span className="font-medium">{device.name || device.serial_number}</span>.
-            Pre-checked employees are already enrolled.
+            <Trans
+              i18nKey="device_users.intro"
+              values={{ device: device.name || device.serial_number }}
+              components={{ b: <span className="font-medium" /> }}
+            />
           </p>
 
           {skipped.length > 0 && (
             <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
-              <p className="font-medium mb-1">Skipped on purpose — not pushed</p>
+              <p className="font-medium mb-1">{t('device_users.skipped')}</p>
               <p className="whitespace-pre-wrap">{skipped.join('\n')}</p>
             </div>
           )}
@@ -131,13 +136,13 @@ export default function DeviceUsersDrawer({ device, onClose, showToast }) {
               className="rounded"
             />
             <label htmlFor="select-all" className="text-sm text-gray-600 cursor-pointer select-none">
-              {allChecked ? 'Deselect all' : 'Select all'} ({allEmployees.length})
+              {allChecked ? t('common.deselect_all') : t('common.select_all')} ({allEmployees.length})
             </label>
           </div>
 
           <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 mb-4 max-h-96 overflow-y-auto">
             {allEmployees.length === 0 && (
-              <p className="text-sm text-gray-400 text-center py-6">No employees in database.</p>
+              <p className="text-sm text-gray-400 text-center py-6">{t('device_users.no_employees')}</p>
             )}
             {allEmployees.map((emp) => {
               const isEnrolled = enrolledIds.has(emp.user_id)
@@ -159,7 +164,7 @@ export default function DeviceUsersDrawer({ device, onClose, showToast }) {
                   </div>
                   {isEnrolled && (
                     <span className="text-xs text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full flex-shrink-0">
-                      Enrolled
+                      {t('device_users.enrolled')}
                     </span>
                   )}
                 </label>
@@ -173,8 +178,8 @@ export default function DeviceUsersDrawer({ device, onClose, showToast }) {
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
           >
             {pushing
-              ? 'Pushing…'
-              : `Push ${selected.size} user${selected.size !== 1 ? 's' : ''} to device`}
+              ? t('device_users.pushing')
+              : t('device_users.push_button', { count: selected.size })}
           </button>
         </>
       )}

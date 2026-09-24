@@ -44,7 +44,7 @@ export default function Login() {
             <Brand
               stacked
               logoClassName="h-9"
-              nameClassName="text-xl font-semibold text-gray-900"
+              nameClassName="text-xl"
             />
           </h1>
           <p className="text-sm text-gray-500 mt-2">{t('auth.sign_in_to_continue')}</p>

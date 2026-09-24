@@ -4,6 +4,8 @@ import logo from '../assets/brand/wata-logo.png'
 // sign-in card and the browser tab all have to say the same thing, and the tab
 // is set in index.html where nothing can import from here.
 export const APP_NAME = 'WTS ZKTeco Sync'
+const [NAME_PREFIX, ...rest] = APP_NAME.split(' ')
+const NAME_PRODUCT = rest.join(' ')
 
 /**
  * The WATA Software wordmark beside — or above — the product name.
@@ -32,8 +34,13 @@ export default function Brand({
       className={`inline-flex items-center ${stacked ? 'flex-col gap-3' : 'gap-2.5'} ${className}`}
     >
       <img src={logo} alt="" aria-hidden="true" className={`${logoClassName} w-auto`} />
-      {!stacked && <span className="h-5 w-px bg-gray-200" aria-hidden="true" />}
-      <span className={nameClassName}>{APP_NAME}</span>
+      {!stacked && <span className="h-5 w-px bg-gray-300" aria-hidden="true" />}
+      <span className={`font-display tracking-tight ${nameClassName}`}>
+        {/* "WTS" is the company prefix, so it steps back and the product
+            name leads. Same text as APP_NAME, which the tab title uses. */}
+        <span className="font-semibold text-brand-red">{NAME_PREFIX}</span>{' '}
+        <span className="font-bold text-gray-900">{NAME_PRODUCT}</span>
+      </span>
     </span>
   )
 }

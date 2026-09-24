@@ -35,7 +35,7 @@ export default function Layout() {
         <div className="max-w-6xl mx-auto px-6">
           {/* Top bar */}
           <div className="flex items-center justify-between h-14">
-            <Brand nameClassName="font-semibold text-gray-900" />
+            <Brand nameClassName="text-base" />
             <div className="flex items-center gap-4">
               <LanguageSwitcher />
               <span className="text-sm text-gray-500">{user?.username}</span>

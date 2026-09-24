@@ -457,146 +457,25 @@ def store_templates(db, serial_number: str, conn) -> list:
     Does not commit; the caller owns the transaction.
     """
     uid_map = {u.uid: u.user_id for u in conn.get_users()}
+    # One query for every stored template, not one per finger.
+    stored = {
+        (ft.user_id, ft.finger_id): ft for ft in db.query(FingerprintTemplate)
+    }
     result = []
     for finger in conn.get_templates():
         user_id = uid_map.get(finger.uid)
         if not user_id:
             continue
         packed = finger.json_pack()
-        ft = (
-            db.query(FingerprintTemplate)
-            .filter_by(user_id=user_id, finger_id=finger.fid)
-            .first()
-        )
+        ft = stored.get((user_id, finger.fid))
         if ft:
-            ft.valid = finger.valid
-            ft.template = packed["template"]
-            ft.source_device_sn = serial_number
-        else:
-            ft = FingerprintTemplate(
-                user_id=user_id,
-                finger_id=finger.fid,
-                valid=finger.valid,
-                template=packed["template"],
-                source_device_sn=serial_number,
-            )
-            db.add(ft)
-        result.append(ft)
-    return result
-
-
-def pull_templates(serial_number: str) -> dict:
-    log.info("pull_templates: starting for device %s", serial_number)
-    result = {"templates_synced": 0, "errors": []}
-    if not _begin(serial_number, "templates"):
-        log.warning(
-            "pull_templates: %s is busy with another pull — refused", serial_number
-        )
-        result["errors"].append(BUSY_DETAIL)
-        return result
-    started = time.monotonic()
-    db = SessionLocal()
-    try:
-        device = db.query(Device).filter_by(serial_number=serial_number).first()
-        if not device:
-            log.warning("pull_templates: device %s not found in DB", serial_number)
-            result["errors"].append("Device not found")
-            return result
-
-        conn = None
-        try:
-            log.info(
-                "pull_templates: connecting to %s (%s:%s)",
-                serial_number,
-                device.ip_address,
-                device.port,
-            )
-            conn = _connect(device)
-
-            rows = store_templates(db, serial_number, conn)
-            result["templates_synced"] = len(rows)
-
-            db.commit()
-            device.last_seen = datetime.now(timezone.utc)
-            device.is_online = True
-            db.commit()
-            log.info(
-                "pull_templates: done for %s — %d templates synced",
-                serial_number,
-                result["templates_synced"],
-            )
-
-        except (ZKErrorConnection, ZKNetworkError) as e:
-            log.error("pull_templates: connection error for %s — %s", serial_number, e)
-            result["errors"].append(_connection_error_detail(device, e))
-            device.is_online = False
-            db.commit()
-        except ZKErrorResponse as e:
-            log.error(
-                "pull_templates: device %s refused authentication — %s",
-                serial_number,
-                e,
-            )
-            result["errors"].append(str(e))
-            db.rollback()
-        except Exception as e:
-            log.exception("pull_templates: unexpected error for %s", serial_number)
-            result["errors"].append(str(e))
-            db.rollback()
-        finally:
-            if conn:
-                try:
-                    conn.disconnect()
-                except Exception:
-                    pass
-
-        record_pull_outcome(
-            db,
-            device,
-            "templates",
-            not result["errors"],
-            (
-                result["errors"][0]
-                if result["errors"]
-                else f"{result['templates_synced']} templates read from the device"
-            ),
-            seconds=time.monotonic() - started,
-        )
-    finally:
-        db.close()
-        _end(serial_number)
-
-    return result
-
-
-def store_templates(db, serial_number: str, conn) -> list:
-    """Read every fingerprint the device holds and upsert it into
-    ``fingerprint_templates``. Returns the rows written, in device order.
-
-    The one writer for the SDK-era fingerprint table: the manual
-    "Sync Templates" route and the Sync All pull both come through here, so
-    a template read by either lands in the same row with the same key
-    (``user_id``, ``finger_id``). A finger whose device ``uid`` does not map
-    to a known ``user_id`` is skipped — there is no employee to attach it to.
-
-    Does not commit; the caller owns the transaction.
-    """
-    uid_map = {u.uid: u.user_id for u in conn.get_users()}
-    result = []
-    for finger in conn.get_templates():
-        user_id = uid_map.get(finger.uid)
-        if not user_id:
-            continue
-        packed = finger.json_pack()
-        ft = (
-            db.query(FingerprintTemplate)
-            .filter_by(user_id=user_id, finger_id=finger.fid)
-            .first()
-        )
-        if ft:
-            ft.valid = finger.valid
-            ft.template = packed["template"]
-            ft.source_device_sn = serial_number
+            # Assign only what differs, so an unchanged finger costs no UPDATE.
+            if ft.valid != finger.valid:
+                ft.valid = finger.valid
+            if ft.template != packed["template"]:
+                ft.template = packed["template"]
+            if ft.source_device_sn != serial_number:
+                ft.source_device_sn = serial_number
         else:
             ft = FingerprintTemplate(
                 user_id=user_id,

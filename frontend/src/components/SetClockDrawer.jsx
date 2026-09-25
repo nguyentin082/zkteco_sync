@@ -4,6 +4,7 @@ import { api } from '../api'
 import { serverMessage } from '../i18n'
 import { formatDateTime } from '../format'
 import Drawer from './Drawer'
+import DeviceWriteHint from './DeviceWriteHint'
 
 export default function SetClockDrawer({ device, onClose, showToast }) {
   const { t } = useTranslation()
@@ -114,13 +115,16 @@ export default function SetClockDrawer({ device, onClose, showToast }) {
           </p>
         )}
 
-        <button
-          type="submit"
-          disabled={saving}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
-        >
-          {saving ? t('set_clock.setting') : t('set_clock.submit')}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
+          >
+            {saving ? t('set_clock.setting') : t('set_clock.submit')}
+          </button>
+          <DeviceWriteHint />
+        </div>
       </form>
     </Drawer>
   )

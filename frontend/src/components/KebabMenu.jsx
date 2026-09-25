@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import Icon from './Icon'
+import DeviceWriteHint from './DeviceWriteHint'
 
-function MenuItem({ label, icon, onClick, danger, disabled, hint, primary }) {
+function MenuItem({ label, icon, onClick, danger, disabled, hint, primary, deviceWrite }) {
   // `hint` is rendered, not hovered: an action that is unavailable has to say
   // why on the face of it, or an operator cannot tell "does not apply to this
   // device" from "broken". Disabled elements swallow mouse events in some
@@ -31,8 +32,11 @@ function MenuItem({ label, icon, onClick, danger, disabled, hint, primary }) {
           <Icon name={icon} />
         </span>
       )}
-      <span className="min-w-0">
-        {label}
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          {label}
+          {deviceWrite && !disabled && <DeviceWriteHint inline />}
+        </span>
         {hint && (
           <span className={`block text-xs leading-snug mt-0.5 font-normal ${primary ? 'text-blue-600/80' : 'text-gray-400'}`}>
             {hint}
@@ -65,6 +69,7 @@ function renderItem(item, key, close) {
       disabled={item.disabled}
       hint={item.hint}
       primary={item.primary}
+      deviceWrite={item.deviceWrite}
       onClick={() => {
         close()
         item.onClick()
@@ -106,7 +111,8 @@ export default function KebabMenu({ items }) {
         <div className="absolute right-0 top-full mt-1 w-60 bg-white rounded-xl shadow-lg border border-gray-200 p-1 z-40">
           {/* Entries: 'divider', { heading }, { group: [items] } — a group is
               indented under a rule, to read as the parts of what is above
-              it — or a plain item. */}
+              it — or a plain item. An item with `deviceWrite` changes the
+              terminal itself and carries a DeviceWriteHint. */}
           {items.map((item, i) =>
             item === 'divider' ? (
               <Divider key={i} />

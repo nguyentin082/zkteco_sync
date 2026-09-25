@@ -24,5 +24,6 @@
   "page_of": "Trang {{page}} / {{total}}",
   "prev": "Trước",
   "next": "Sau",
-  "no_results": "Không có kết quả."
+  "no_results": "Không có kết quả.",
+  "device_write_hint": "Thao tác này tác động trực tiếp lên máy chấm công: ghi, sửa hoặc xóa dữ liệu trên thiết bị."
 }

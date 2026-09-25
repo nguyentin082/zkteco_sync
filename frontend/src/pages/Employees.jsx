@@ -7,6 +7,7 @@ import { useAuth } from '../auth'
 import RevocationCard from '../components/RevocationCard'
 import DeleteEmployeeModal from '../components/DeleteEmployeeModal'
 import HandsDiagram from '../components/HandsDiagram'
+import DeviceWriteHint from '../components/DeviceWriteHint'
 import { fingerName } from '../fingers'
 
 const PRIVILEGE_CODES = [0, 2, 14]
@@ -906,6 +907,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                           {busy === 'removing' ? t('employees.removing') : t('employees.remove')}
                         </button>
                       )}
+                      {!revoking && <DeviceWriteHint />}
                     </div>
                   )
                 })}
@@ -914,7 +916,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
 
             {/* Push to a new device */}
             {unenrolledDevices.length > 0 && (
-              <form onSubmit={handlePushToDevice} className="flex gap-2">
+              <form onSubmit={handlePushToDevice} className="flex items-center gap-2">
                 <select
                   value={pushDeviceSn}
                   onChange={(e) => setPushDeviceSn(e.target.value)}
@@ -940,6 +942,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                     ? t('employees.queue_for_device')
                     : t('employees.push_to_device')}
                 </button>
+                <DeviceWriteHint />
               </form>
             )}
             {pushIsQueued && (
@@ -1002,7 +1005,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
             </div>
 
             {isAdmin && allDevices.length > 0 && (
-              <form onSubmit={handlePushBiometrics} className="flex gap-2">
+              <form onSubmit={handlePushBiometrics} className="flex items-center gap-2">
                 <select
                   value={bioDeviceSn}
                   onChange={(e) => setBioDeviceSn(e.target.value)}
@@ -1036,6 +1039,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                     ? t('employees.queue_for_device')
                     : t('employees.push_to_device')}
                 </button>
+                <DeviceWriteHint />
               </form>
             )}
             <p className="text-xs text-gray-400 mt-2">
@@ -1121,6 +1125,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                             {busyTemplate[selectedFinger] ? '…' : t('common.delete')}
                           </button>
                         )}
+                        {stored.origin === 'sdk' && <DeviceWriteHint />}
                       </div>
                       {stored.origin === 'biodata' && (
                         <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">
@@ -1133,7 +1138,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                       <p className="text-gray-800 font-medium">{fingerName(selectedFinger)}</p>
                       <p className="text-xs text-gray-400 mb-2">{t('employees.not_enrolled')}</p>
                       {enrolledDevices && enrolledDevices.length > 0 ? (
-                        <form onSubmit={handleEnroll} className="flex gap-2">
+                        <form onSubmit={handleEnroll} className="flex items-center gap-2">
                           <select
                             value={enrollDeviceSn}
                             onChange={(e) => setEnrollDeviceSn(e.target.value)}
@@ -1156,6 +1161,7 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
                           >
                             {enrolling ? t('employees.starting') : t('employees.enroll')}
                           </button>
+                          <DeviceWriteHint />
                         </form>
                       ) : (
                         <p className="text-xs text-gray-400">

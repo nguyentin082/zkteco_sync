@@ -5,6 +5,7 @@ import { api } from '../api'
 import { formatDuration } from '../format'
 import Drawer from './Drawer'
 import RevocationCard from './RevocationCard'
+import DeviceWriteHint from './DeviceWriteHint'
 
 const PRESETS = [
   { key: 'reboot', value: 'REBOOT' },
@@ -317,13 +318,16 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
             </p>
           )}
 
-          <button
-            type="submit"
-            disabled={sending}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
-          >
-            {sending ? t('commands.queuing') : t('commands.queue_button')}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={sending}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
+            >
+              {sending ? t('commands.queuing') : t('commands.queue_button')}
+            </button>
+            <DeviceWriteHint />
+          </div>
         </form>
       </Section>
 
@@ -468,13 +472,16 @@ export default function CommandsDrawer({ device, onClose, showToast, onChange })
                         </div>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => handleRetryClick(row)}
-                        disabled={!!busy[`log-${row.id}`]}
-                        className="mt-1.5 text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50 disabled:opacity-40 transition-colors"
-                      >
-                        {busy[`log-${row.id}`] ? t('commands.requeuing') : t('commands.retry')}
-                      </button>
+                      <span className="inline-flex items-center gap-1 mt-1.5">
+                        <button
+                          onClick={() => handleRetryClick(row)}
+                          disabled={!!busy[`log-${row.id}`]}
+                          className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50 disabled:opacity-40 transition-colors"
+                        >
+                          {busy[`log-${row.id}`] ? t('commands.requeuing') : t('commands.retry')}
+                        </button>
+                        <DeviceWriteHint />
+                      </span>
                     )
                   )}
                 </div>

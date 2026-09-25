@@ -24,5 +24,6 @@
   "page_of": "Page {{page}} of {{total}}",
   "prev": "Prev",
   "next": "Next",
-  "no_results": "No results."
+  "no_results": "No results.",
+  "device_write_hint": "This action affects the attendance device directly: it writes, edits or deletes data on the terminal."
 }

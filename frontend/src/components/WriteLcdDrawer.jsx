@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../api'
 import Drawer from './Drawer'
+import DeviceWriteHint from './DeviceWriteHint'
 
 export default function WriteLcdDrawer({ device, onClose, showToast }) {
   const { t } = useTranslation()
@@ -74,7 +75,7 @@ export default function WriteLcdDrawer({ device, onClose, showToast }) {
           </p>
         )}
 
-        <div className="flex gap-3">
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={handleClear}
@@ -90,6 +91,7 @@ export default function WriteLcdDrawer({ device, onClose, showToast }) {
           >
             {saving ? t('lcd.writing') : t('lcd.write')}
           </button>
+          <DeviceWriteHint />
         </div>
       </form>
     </Drawer>

@@ -3,6 +3,7 @@ import { Trans, useTranslation } from 'react-i18next'
 import { api } from '../api'
 import { serverMessage } from '../i18n'
 import Drawer from './Drawer'
+import DeviceWriteHint from './DeviceWriteHint'
 
 // The bulk endpoint names a deliberate skip in `errors` alongside real
 // failures ("employee not found in DB") because it has no separate channel
@@ -182,15 +183,18 @@ export default function DeviceUsersDrawer({ device, onClose, showToast }) {
             })}
           </div>
 
-          <button
-            onClick={handlePush}
-            disabled={pushing || selected.size === 0}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
-          >
-            {pushing
-              ? t('device_users.pushing')
-              : t('device_users.push_button', { count: selected.size })}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePush}
+              disabled={pushing || selected.size === 0}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
+            >
+              {pushing
+                ? t('device_users.pushing')
+                : t('device_users.push_button', { count: selected.size })}
+            </button>
+            <DeviceWriteHint />
+          </div>
         </>
       )}
     </Drawer>

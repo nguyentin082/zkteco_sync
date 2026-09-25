@@ -516,9 +516,9 @@ export default function Devices() {
         ],
       },
       'divider',
-      { label: t('devices.menu.manage_users'), icon: 'userPlus', onClick: () => setDrawer({ type: 'users', device }) },
+      { label: t('devices.menu.manage_users'), icon: 'userPlus', deviceWrite: true, onClick: () => setDrawer({ type: 'users', device }) },
       { label: t('devices.menu.device_info'), icon: 'info', onClick: () => setDrawer({ type: 'info', device }) },
-      { label: t('devices.menu.set_clock'), icon: 'clock', onClick: () => setDrawer({ type: 'clock', device }) },
+      { label: t('devices.menu.set_clock'), icon: 'clock', deviceWrite: true, onClick: () => setDrawer({ type: 'clock', device }) },
       // No command in the access-control protocol addresses the screen, so
       // this is shown unavailable with the reason rather than left clickable
       // (it would open a drawer whose only possible outcome is a 501).
@@ -529,23 +529,25 @@ export default function Devices() {
             disabled: true,
             hint: t('devices.menu.write_lcd_na'),
           }
-        : { label: t('devices.menu.write_lcd'), icon: 'display', onClick: () => setDrawer({ type: 'lcd', device }) },
+        : { label: t('devices.menu.write_lcd'), icon: 'display', deviceWrite: true, onClick: () => setDrawer({ type: 'lcd', device }) },
       // The door DOES work here, but it is not the same action it is on an
       // SDK device and the menu says so before it is clicked. See handleUnlock.
       isAcc
         ? {
             label: t('devices.menu.unlock_door'),
             icon: 'unlock',
+            deviceWrite: true,
             onClick: () => handleUnlock(device),
             hint: t('devices.menu.unlock_door_acc'),
           }
-        : { label: t('devices.menu.unlock_door'), icon: 'unlock', onClick: () => handleUnlock(device) },
-      { label: t('devices.menu.commands'), icon: 'terminal', onClick: () => setDrawer({ type: 'commands', device }) },
+        : { label: t('devices.menu.unlock_door'), icon: 'unlock', deviceWrite: true, onClick: () => handleUnlock(device) },
+      { label: t('devices.menu.commands'), icon: 'terminal', deviceWrite: true, onClick: () => setDrawer({ type: 'commands', device }) },
       'divider',
       {
         label: t('devices.menu.clear_attendance'),
         icon: 'archiveX',
         danger: true,
+        deviceWrite: true,
         onClick: () => confirmAction(
           t('devices.menu.clear_attendance'),
           isAcc
@@ -558,6 +560,7 @@ export default function Devices() {
         label: t('devices.menu.restart'),
         icon: 'power',
         danger: true,
+        deviceWrite: true,
         onClick: () => confirmAction(
           t('devices.menu.restart'),
           isAcc

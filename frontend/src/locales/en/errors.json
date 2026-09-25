@@ -59,7 +59,8 @@
     "acc_no_lcd": "{{sn}} is an access-control terminal, and there is no command for writing to its screen. Nothing was queued.",
     "user_not_enrolled": "User not enrolled on this device",
     "user_not_enrolled_push_first": "User not enrolled on this device — push them first",
-    "user_not_on_device_push_first": "User not found on device — push them first"
+    "user_not_on_device_push_first": "User not found on device — push them first",
+    "user_delete_refused": "{{sn}} refused to delete this user"
   },
   "command": {
     "not_found": "No outstanding command with that id on this device",

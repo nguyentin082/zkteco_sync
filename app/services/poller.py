@@ -8,7 +8,7 @@ from zk.exception import ZKErrorConnection, ZKErrorResponse, ZKNetworkError
 
 from app import config
 from app.database import SessionLocal
-from app.models import AttendanceLog, Device, FingerprintTemplate
+from app.models import AttendanceLog, Device, DeviceEmployee, FingerprintTemplate
 from app.services import employee_sync, zk_attendance
 from app.services.punch_filter import is_person_pin
 
@@ -166,9 +166,51 @@ def _connection_error_detail(device, exc) -> str:
     return f"Could not connect to {device.ip_address}:{device.port} — {exc}"
 
 
+def _unlink_absent(db, serial_number: str, users) -> list:
+    """Drop the enrolment links this device has just shown to be false.
+
+    The device's user table is the fact; a `device_employees` row is only our
+    belief about it, and the belief goes stale whenever someone else changes
+    the terminal — another server sharing it (dev and staging on one door),
+    the terminal's own menu, a factory reset. Left alone, a stale link blocks
+    deleting the employee (409 "still enrolled") and makes Remove dial the
+    device about a person who is not there.
+
+    Only called after a complete SDK read, where a pushed user is on the
+    device the moment the push returns — there is no queued-but-undelivered
+    state to mistake for absence. An empty read is not trusted to clear
+    anything: a terminal that answers with no users while we believe it
+    holds some is far likelier to be a bad read than a wiped device.
+    """
+    present = {str(u.user_id) for u in users}
+    linked = [
+        row.user_id
+        for row in db.query(DeviceEmployee).filter_by(device_sn=serial_number).all()
+    ]
+    stale = [uid for uid in linked if uid not in present]
+    if not stale:
+        return []
+    if not present:
+        log.warning(
+            "pull_employees: %s returned no users but %d are linked to it — "
+            "not clearing links on an empty read",
+            serial_number,
+            len(stale),
+        )
+        return []
+    for user_id in stale:
+        employee_sync.unlink_device_employee(db, serial_number, user_id)
+    log.info(
+        "pull_employees: %s no longer holds %s — enrolment links cleared",
+        serial_number,
+        ", ".join(stale),
+    )
+    return stale
+
+
 def pull_employees(serial_number: str) -> dict:
     log.info("pull_employees: starting for device %s", serial_number)
-    result = {"users_synced": 0, "errors": []}
+    result = {"users_synced": 0, "unlinked": [], "errors": []}
     if not _begin(serial_number, "employees"):
         log.warning(
             "pull_employees: %s is busy with another pull — refused", serial_number
@@ -194,7 +236,8 @@ def pull_employees(serial_number: str) -> dict:
             )
             conn = _connect(device)
 
-            for user in conn.get_users():
+            users = conn.get_users()
+            for user in users:
                 # Deliberately the same writer the ADMS `tabledata&tablename=user`
                 # upload uses (app/services/employee_sync.py). A device on the
                 # LAN can be reachable over both TCP 4370 and the PUSH channel,
@@ -214,14 +257,16 @@ def pull_employees(serial_number: str) -> dict:
                 )
                 result["users_synced"] += 1
 
+            result["unlinked"] = _unlink_absent(db, serial_number, users)
             db.commit()
             device.last_seen = datetime.now(timezone.utc)
             device.is_online = True
             db.commit()
             log.info(
-                "pull_employees: done for %s — %d users synced",
+                "pull_employees: done for %s — %d users synced, %d stale links cleared",
                 serial_number,
                 result["users_synced"],
+                len(result["unlinked"]),
             )
 
         except (ZKErrorConnection, ZKNetworkError) as e:
@@ -257,6 +302,11 @@ def pull_employees(serial_number: str) -> dict:
                 result["errors"][0]
                 if result["errors"]
                 else f"{result['users_synced']} users read from the device"
+                + (
+                    f"; {len(result['unlinked'])} no longer on it, links cleared"
+                    if result["unlinked"]
+                    else ""
+                )
             ),
             seconds=time.monotonic() - started,
         )

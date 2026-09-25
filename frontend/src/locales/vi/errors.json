@@ -59,7 +59,8 @@
     "acc_no_lcd": "{{sn}} là máy kiểm soát ra vào, và không có lệnh nào để ghi lên màn hình của máy. Không có lệnh nào được đưa vào hàng đợi.",
     "user_not_enrolled": "Người dùng chưa được đăng ký trên thiết bị này",
     "user_not_enrolled_push_first": "Người dùng chưa được đăng ký trên thiết bị này — hãy đẩy họ lên trước",
-    "user_not_on_device_push_first": "Không tìm thấy người dùng trên thiết bị — hãy đẩy họ lên trước"
+    "user_not_on_device_push_first": "Không tìm thấy người dùng trên thiết bị — hãy đẩy họ lên trước",
+    "user_delete_refused": "{{sn}} từ chối xóa người dùng này"
   },
   "command": {
     "not_found": "Không có lệnh đang chờ nào với mã này trên thiết bị",

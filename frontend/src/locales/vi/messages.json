@@ -39,6 +39,7 @@
   "revoke_withdrawn": "Người này chưa từng được xác nhận trên {{sn}}; {{count}} lệnh đang chờ đưa họ lên đã được rút lại. Không có gì được gửi tới thiết bị.",
   "revoke_queued": "Đã thu hồi quyền trong hệ thống — CHƯA được xác nhận tại cửa. {{sn}} nhận mỗi lần một lệnh (khoảng 10 giây) rồi mới xác nhận; trước khi đó, người này vẫn mở được cửa. Nếu máy mất kết nối, lệnh thu hồi sẽ chờ và vẫn hiển thị là đang chờ.",
   "revoke_removed": "Đã gỡ khỏi {{sn}}. Thiết bị đã xác nhận.",
+  "revoke_already_absent": "{{sn}} không còn giữ người này — đã bị gỡ ở nơi khác (ví dụ một server khác dùng chung máy). Đã xóa bản ghi đăng ký cũ trên hệ thống.",
   "revocation_cancelled": "Đã hủy lệnh thu hồi. {{user_id}} vẫn giữ quyền ra vào {{sn}} — nếu họ đã được xác nhận trên máy, thiết bị không hề thay đổi gì.",
   "templates_queued": "Đã đưa {{count}} lệnh vào hàng đợi cho {{sn}}: {{templates}} mẫu. Mỗi lần kết nối nhận một lệnh nên mất khoảng {{seconds}} giây, và chưa có gì được gửi cho đến khi thiết bị nhận.",
   "templates_queued_behind": "Đã đưa {{count}} lệnh vào hàng đợi cho {{sn}}: {{templates}} mẫu, xếp sau hồ sơ người dùng và quyền ra cửa mà máy chưa xác nhận. Mỗi lần kết nối nhận một lệnh nên mất khoảng {{seconds}} giây, và chưa có gì được gửi cho đến khi thiết bị nhận.",

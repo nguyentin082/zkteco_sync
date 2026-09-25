@@ -1823,22 +1823,49 @@ def remove_user_from_device(
 
     try:
         with device_connection(device) as conn:
-            conn.delete_user(uid=de.uid, user_id=user_id)
+            # Look the person up on the device rather than trusting `de.uid`.
+            # The link can be stale: another server sharing this terminal (a
+            # dev and a staging instance, say) may already have removed them,
+            # and the freed uid slot is handed to the next person pushed. A
+            # delete by the stored uid would then take the wrong person off
+            # the door — or be refused, leaving this link impossible to clear.
+            on_device = next(
+                (u for u in conn.get_users() if str(u.user_id) == str(user_id)), None
+            )
+            if on_device is not None:
+                conn.delete_user(uid=on_device.uid, user_id=user_id)
         # Only now, and through the single deleter — the device has actually
-        # done it, which is what the SDK transport's synchronicity buys.
+        # done it, or has just shown it no longer holds this person, which is
+        # the same fact. That is what the SDK transport's synchronicity buys.
         employee_sync.unlink_device_employee(db, sn, user_id)
         db.commit()
     except (ZKErrorConnection, ZKNetworkError):
         raise AppError("device.connect_failed", status_code=503, detail="Could not connect to device")
+    except ZKErrorResponse:
+        raise AppError("device.user_delete_refused", params={"sn": sn},
+            status_code=502, detail=f"{sn} refused to delete this user")
 
+    already_absent = on_device is None
     audit.record(
         db,
         admin.username,
         "device_user_remove",
         target=f"{sn}/{user_id}",
         ip=client_ip(request),
-        detail="transport=sdk",
+        detail="transport=sdk" + (" already_absent" if already_absent else ""),
     )
+    if already_absent:
+        return {
+            "device_sn": sn,
+            "user_id": user_id,
+            "transport": "sdk",
+            "status": "removed",
+            "message": (
+                f"{sn} no longer held this person — removed elsewhere. "
+                "The stale enrolment record has been cleared."
+            ),
+            **message("revoke_already_absent", sn=sn),
+        }
     return {
         "device_sn": sn,
         "user_id": user_id,

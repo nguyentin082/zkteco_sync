@@ -505,7 +505,9 @@ function DetailPanel({ employee, allDevices, onEdit, onDeleted, isAdmin }) {
       } else if (res?.status === 'withdrawn') {
         showToast(serverMessage(res, t('employees.push_withdrawn', { sn })))
       } else {
-        showToast(t('employees.removed_from', { sn }))
+        // `revoke_already_absent` is worth reading: the device had already
+        // lost this person, so nothing was deleted by this click.
+        showToast(serverMessage(res, t('employees.removed_from', { sn })))
       }
       reload()
     } catch (err) {

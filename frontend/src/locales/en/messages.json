@@ -39,6 +39,7 @@
   "revoke_withdrawn": "This person was never confirmed on {{sn}}; the {{count}} command(s) still waiting to put them there have been withdrawn. Nothing was sent to the device.",
   "revoke_queued": "Access revoked in the system — NOT yet confirmed at the door. {{sn}} collects one command per poll (about 10 seconds) and confirms afterwards; until it does, this person can still open that door. If the terminal is offline the revocation waits, and stays visible as outstanding.",
   "revoke_removed": "Removed from {{sn}}. The device confirmed it.",
+  "revoke_already_absent": "{{sn}} no longer held this person — they were removed elsewhere (for example by another server sharing this device). The stale enrolment record has been cleared.",
   "revocation_cancelled": "Revocation cancelled. {{user_id}} keeps their access to {{sn}} — if they were already confirmed on it, nothing about the device changed at any point.",
   "templates_queued": "Queued {{count}} commands for {{sn}}: {{templates}} template(s). At one command per poll this takes roughly {{seconds}} seconds, and nothing is delivered until the device collects it — this is not delivered yet.",
   "templates_queued_behind": "Queued {{count}} commands for {{sn}}: {{templates}} template(s) behind the person's user record and door permission, which this terminal has not confirmed yet. At one command per poll this takes roughly {{seconds}} seconds, and nothing is delivered until the device collects it — this is not delivered yet.",

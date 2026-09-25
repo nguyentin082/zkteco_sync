@@ -6484,9 +6484,17 @@ class RevocationTestCase(TemplatePushTestCase):
 
 
 class SdkRevocation(FakeConnection):
-    """FakeConnection plus a record of what was deleted over the SDK."""
+    """FakeConnection plus a record of what was deleted over the SDK.
+
+    Holds 9001 in uid slot 7 unless told otherwise: Remove now looks the
+    person up on the device first and deletes by the uid the device reports,
+    so a terminal that does not hold them is a different case (already gone).
+    """
 
     def __init__(self, **kwargs):
+        from types import SimpleNamespace
+        kwargs.setdefault("users", [SimpleNamespace(
+            uid=7, user_id="9001", name="", card=0, privilege=0, password="", group_id="")])
         super().__init__(**kwargs)
         self.deleted = []
 
@@ -6645,7 +6653,7 @@ class RevocationTransportRoutingTests(RevocationTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["transport"], "sdk")
         self.assertEqual(response.json()["status"], "removed")
-        self.assertEqual(conn.deleted, [{"uid": 0, "user_id": "9001"}])
+        self.assertEqual(conn.deleted, [{"uid": 7, "user_id": "9001"}])
         # Nothing queued anywhere — not on this device and not on any other.
         self.assertEqual(self.outbox(), [])
         # The SDK path IS synchronous, so the link goes now.

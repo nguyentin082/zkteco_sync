@@ -6,6 +6,7 @@ from zk.exception import ZKErrorConnection, ZKErrorResponse, ZKNetworkError
 from app.database import SessionLocal
 from app.models import Device, DeviceEmployee
 from app.errors import AppError
+from app.services import poller
 
 
 def _connect(zk_instance: ZK):
@@ -39,22 +40,29 @@ def device_connection(device: Device):
         with device_connection(device) as conn:
             conn.get_users()
     """
-    zk_instance = ZK(
-        device.ip_address,
-        port=device.port,
-        timeout=30,
-        password=device.comm_key or 0,
-        force_udp=bool(device.force_udp),
-        verbose=False,
-    )
-    conn = _connect(zk_instance)
+    # One SDK session per terminal: a second CONNECT during a pull times out
+    # and can wedge the terminal for minutes, so refuse rather than dial.
+    if not poller.hold_session(device.serial_number):
+        raise AppError("device.sync_busy", status_code=409, detail=poller.BUSY_DETAIL)
     try:
-        yield conn
-    finally:
+        zk_instance = ZK(
+            device.ip_address,
+            port=device.port,
+            timeout=30,
+            password=device.comm_key or 0,
+            force_udp=bool(device.force_udp),
+            verbose=False,
+        )
+        conn = _connect(zk_instance)
         try:
-            conn.disconnect()
-        except Exception:
-            pass
+            yield conn
+        finally:
+            try:
+                conn.disconnect()
+            except Exception:
+                pass
+    finally:
+        poller.release_session(device.serial_number)
 
 
 def write_user(conn, emp, existing):
@@ -114,6 +122,11 @@ def enroll_user_task(serial_number: str, user_id: str, finger_id: int) -> None:
         if not de:
             return
 
+        # Holds the device for as long as the enrolment waits for a finger.
+        # Busy means another session is talking to it: dialling anyway could
+        # wedge the terminal, and this task has nobody to report to.
+        if not poller.hold_session(serial_number):
+            return
         zk_instance = ZK(
             device.ip_address,
             port=device.port,
@@ -134,5 +147,6 @@ def enroll_user_task(serial_number: str, user_id: str, finger_id: int) -> None:
                     conn.disconnect()
                 except Exception:
                     pass
+            poller.release_session(serial_number)
     finally:
         db.close()

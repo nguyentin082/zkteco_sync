@@ -15,13 +15,13 @@ from app.services.punch_filter import is_person_pin
 log = logging.getLogger(__name__)
 
 
-def _connect(device):
+def _connect(device, force_udp=None):
     zk = ZK(
         device.ip_address,
         port=device.port,
         timeout=30,
         password=device.comm_key or 0,
-        force_udp=bool(device.force_udp),
+        force_udp=bool(device.force_udp) if force_udp is None else force_udp,
         verbose=False,
     )
     try:
@@ -81,6 +81,17 @@ def _end(serial_number: str) -> None:
             stack.pop()
             if not stack:
                 del _active[serial_number]
+    _lock_for(serial_number).release()
+
+
+def hold_session(serial_number: str) -> bool:
+    """Take the device's SDK lock for a short interactive call (push, remove,
+    unlock...), or refuse at once. Unlike `_begin` it is not listed in
+    `pulling_kinds`, so the Devices page does not call a push a sync."""
+    return _lock_for(serial_number).acquire(blocking=False)
+
+
+def release_session(serial_number: str) -> None:
     _lock_for(serial_number).release()
 
 
@@ -292,7 +303,30 @@ def pull_attendance(serial_number: str) -> dict:
                 cursor = None
             # Only what was added since the last pull, not the whole log
             # (see app/services/zk_attendance.py).
-            records, new_cursor, read_mode = zk_attendance.read_attendance(conn, cursor)
+            def is_stored(att):
+                if not is_person_pin(att.user_id):
+                    return None
+                return db.query(AttendanceLog.id).filter_by(
+                    device_sn=serial_number,
+                    user_id=str(att.user_id),
+                    timestamp=att.timestamp,
+                ).first() is not None
+
+            def full_read_over_tcp():
+                # UDP is quick for commands but moved a 3.9 MB log at a few
+                # KB/s on the terminal that needed it, where TCP took ~10 min.
+                # One session per terminal: close this one before dialling.
+                nonlocal conn
+                conn.disconnect()
+                conn = _connect(device, force_udp=False)
+                return conn.get_attendance()
+
+            records, new_cursor, read_mode = zk_attendance.read_attendance(
+                conn,
+                cursor,
+                is_stored=is_stored,
+                full_read=full_read_over_tcp if device.force_udp else None,
+            )
             records_read = len(records)
             log.info(
                 "pull_attendance: device %s returned %d records from device "
@@ -432,7 +466,6 @@ def pull_attendance(serial_number: str) -> dict:
                 if result["errors"]
                 else f"{result['attendance_synced']} new punches stored "
                 f"({records_read} read from the device"
-                + (", nothing new on the device" if read_mode == "unchanged" else "")
                 + ")"
             ),
             seconds=time.monotonic() - started,

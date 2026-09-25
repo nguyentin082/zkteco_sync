@@ -5260,25 +5260,29 @@ class SdkAttendancePullDedupTests(AdmsTestCase):
         result = self.poller.pull_attendance(self.SN)
         return result, conns[-1]
 
-    def test_a_repeat_pull_with_nothing_new_reads_no_punches_at_all(self):
+    def test_a_repeat_pull_with_nothing_new_reads_only_the_tail(self):
+        from unittest import mock
         self.pull()
-        result, conn = self.pull()
+        with mock.patch("app.services.zk_attendance.ANCHOR_SLACK", 0):
+            result, conn = self.pull()
         self.assertEqual(result["errors"], [])
         self.assertEqual(result["attendance_synced"], 0)
         self.assertEqual(getattr(conn, "full_reads", 0), 0)
-        self.assertEqual(getattr(conn, "chunk_reads", []), [])
+        self.assertEqual(conn.chunk_reads, [(4 + 2 * 40, 40)])   # the anchor alone
 
     def test_a_new_punch_is_read_from_the_tail_not_the_whole_log(self):
         self.pull()
         self.records.append(
             self._FakeAttendance("25020", datetime(2025, 6, 3, 8, 1, 2))
         )
-        result, conn = self.pull()
+        from unittest import mock
+        with mock.patch("app.services.zk_attendance.ANCHOR_SLACK", 1):
+            result, conn = self.pull()
         self.assertEqual(result["attendance_synced"], 1)
         self.assertEqual(self.rows(), 4)
         self.assertEqual(getattr(conn, "full_reads", 0), 0)
-        # From the anchor (record 3, the last one seen) to the end: 2 records.
-        self.assertEqual(conn.chunk_reads, [(4 + 2 * 40, 2 * 40)])
+        # From one before the anchor (record 3, the last seen) to the end.
+        self.assertEqual(conn.chunk_reads, [(4 + 1 * 40, 3 * 40)])
 
     def test_a_log_rewritten_under_the_cursor_is_read_in_full(self):
         """Cleared and refilled past the old count: the anchor is not where
@@ -5293,18 +5297,17 @@ class SdkAttendancePullDedupTests(AdmsTestCase):
         self.assertEqual(result["attendance_synced"], 5)
         self.assertEqual(self.rows(), 8)
 
-    def test_a_full_log_is_checked_even_when_its_count_did_not_move(self):
-        """At capacity a terminal can drop its oldest punch for each new one,
-        so an unchanged count proves nothing there."""
+    def test_a_punch_is_found_even_when_the_count_did_not_move(self):
+        """Seen on a ZLM60_TFT: a record one position lower than where the
+        previous pull read it. Here the oldest punch goes as a new one comes
+        (as a full log does): same count, anchor shifted, new punch read."""
         self.pull()
-        self._FakeConn.rec_cap = len(self.records)
-        self.addCleanup(setattr, self._FakeConn, "rec_cap", FakeAttendanceLog.rec_cap)
         self.records.pop(0)
         self.records.append(
             self._FakeAttendance("25020", datetime(2025, 6, 3, 8, 1, 2))
         )
         result, conn = self.pull()
-        self.assertEqual(conn.full_reads, 1)
+        self.assertEqual(getattr(conn, "full_reads", 0), 0)
         self.assertEqual(result["attendance_synced"], 1)
 
     def test_a_punch_written_into_a_trailing_blank_slot_is_not_missed(self):
@@ -5318,6 +5321,76 @@ class SdkAttendancePullDedupTests(AdmsTestCase):
         self.assertEqual(getattr(conn, "full_reads", 0), 0)
         self.assertEqual(result["attendance_synced"], 1)
         self.assertEqual(self.rows(), 4)
+
+    def forget_cursor(self):
+        db = self.Session()
+        try:
+            db.query(Device).filter_by(serial_number=self.SN).update(
+                {"attendance_cursor": None}
+            )
+            db.commit()
+        finally:
+            db.close()
+
+    def test_a_pull_with_no_cursor_anchors_on_punches_already_stored(self):
+        """An install upgraded with a year of punches already in the table
+        must not read the whole log once more just to find where it is."""
+        from unittest import mock
+        self.pull()
+        self.forget_cursor()
+        self.records.append(self._FakeAttendance("25020", datetime(2025, 6, 3, 8, 1, 2)))
+        self.records.append(self._FakeAttendance("25021", datetime(2025, 6, 3, 8, 5, 0)))
+        with mock.patch("app.services.zk_attendance.SEED_WINDOWS", (3,)):
+            result, conn = self.pull()
+        self.assertEqual(getattr(conn, "full_reads", 0), 0)
+        self.assertEqual(conn.chunk_reads, [(4 + 2 * 40, 3 * 40)])
+        self.assertEqual(result["attendance_synced"], 2)
+        self.assertEqual(self.rows(), 5)
+        # ...and the cursor it leaves is used by the next pull.
+        again, conn = self.pull()
+        self.assertEqual(again["attendance_synced"], 0)
+        self.assertEqual(getattr(conn, "full_reads", 0), 0)
+
+    def test_a_window_with_nothing_stored_falls_back_to_a_full_read(self):
+        """The window's earliest punch is not in the database, so there may
+        be a gap before it: the only safe answer is to read everything."""
+        from unittest import mock
+        self.pull()
+        self.forget_cursor()
+        self.records.append(self._FakeAttendance("25020", datetime(2025, 6, 3, 8, 1, 2)))
+        self.records.append(self._FakeAttendance("25021", datetime(2025, 6, 3, 8, 5, 0)))
+        with mock.patch("app.services.zk_attendance.SEED_WINDOWS", (2,)):
+            result, conn = self.pull()
+        self.assertEqual(conn.full_reads, 1)
+        self.assertEqual(result["attendance_synced"], 2)
+
+    def test_a_full_read_on_a_udp_device_is_done_over_tcp_on_a_fresh_session(self):
+        db = self.Session()
+        try:
+            db.query(Device).filter_by(serial_number=self.SN).update({"force_udp": True})
+            db.commit()
+        finally:
+            db.close()
+        dialled = []
+
+        class Conn(self._FakeConn):
+            def disconnect(inner):
+                inner.closed = True
+
+        def connect(device, force_udp=None):
+            dialled.append(force_udp)
+            conn = Conn(self.records)
+            conns.append(conn)
+            return conn
+
+        conns = []
+        self.poller._connect = connect
+        result = self.poller.pull_attendance(self.SN)
+        self.assertEqual(result["attendance_synced"], 3)
+        self.assertEqual(dialled, [None, False])       # UDP, then TCP
+        self.assertTrue(conns[0].closed)                # closed before dialling
+        self.assertEqual(getattr(conns[0], "full_reads", 0), 0)
+        self.assertEqual(conns[1].full_reads, 1)
 
     def test_a_failed_pull_does_not_move_the_cursor(self):
         self.pull()
@@ -6216,6 +6289,77 @@ class SpaShellCachingTests(unittest.TestCase):
         self.assertIn("application/json", response.headers["content-type"])
         self.assertEqual(response.json(), [{"user_id": "1"}])
 
+
+
+class SdkSessionLockTests(AdmsTestCase):
+    """A terminal serves one SDK session. A push that dials while a pull is
+    reading the punch log times out and can wedge the terminal for minutes,
+    so every interactive SDK call shares the pull's lock and is refused."""
+
+    SN = "LOCK0001"
+
+    def setUp(self):
+        super().setUp()
+        db = self.Session()
+        try:
+            db.add(Device(serial_number=self.SN, ip_address="192.0.2.60", port=4370,
+                          status="approved", protocol="att"))
+            db.commit()
+            self.device = db.query(Device).filter_by(serial_number=self.SN).one()
+            db.expunge(self.device)
+        finally:
+            db.close()
+
+    def hold_elsewhere(self):
+        """Hold the device lock from another thread, as a background pull does."""
+        import threading
+        from app.services import poller
+        held, done = threading.Event(), threading.Event()
+
+        def run():
+            poller.hold_session(self.SN)
+            held.set()
+            done.wait(5)
+            poller.release_session(self.SN)
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        held.wait(5)
+        self.addCleanup(thread.join)
+        self.addCleanup(done.set)
+
+    def test_an_sdk_call_during_a_pull_is_refused_without_dialling(self):
+        from unittest import mock
+        from app.errors import AppError
+        from app.services import sdk
+        self.hold_elsewhere()
+        with mock.patch.object(sdk, "ZK") as zk:
+            with self.assertRaises(AppError) as caught:
+                with sdk.device_connection(self.device):
+                    pass
+        self.assertEqual(caught.exception.status_code, 409)
+        zk.assert_not_called()
+
+    def test_the_lock_is_released_after_a_call(self):
+        from unittest import mock
+        from app.services import poller, sdk
+        with mock.patch.object(sdk, "ZK"):
+            with sdk.device_connection(self.device):
+                pass
+        self.assertFalse(poller.is_pulling(self.SN))
+        # Free for the next caller, including one on another thread.
+        import threading
+        got = []
+
+        def take_and_give_back():
+            got.append(poller.hold_session(self.SN))
+            if got[-1]:
+                poller.release_session(self.SN)
+
+        t = threading.Thread(target=take_and_give_back)
+        t.start()
+        t.join()
+        self.assertEqual(got, [True])
 
 if __name__ == "__main__":
     unittest.main()

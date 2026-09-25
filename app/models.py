@@ -122,9 +122,9 @@ class Device(Base):
     pull_outcomes = Column(Text, nullable=True)
 
     # Where the last SDK attendance pull stopped reading the punch log, as
-    # JSON {"records", "anchor", "last", "anchor_is_last"}. Lets the
-    # next pull skip the read when nothing was added and otherwise read only
-    # the tail (app/services/zk_attendance.py). NULL means "read it all".
+    # JSON {"records", "anchor", "last"}: the last real record read and its
+    # position. Lets the next pull read only the tail of the punch log
+    # (app/services/zk_attendance.py). NULL means "find it again".
     attendance_cursor = Column(Text, nullable=True)
 
     @property

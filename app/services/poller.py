@@ -15,6 +15,59 @@ from app.services.punch_filter import is_person_pin
 log = logging.getLogger(__name__)
 
 
+def _close_socket(zk) -> None:
+    sock = getattr(zk, "_ZK__sock", None)
+    if sock is not None:
+        try:
+            sock.close()
+        except OSError:
+            pass
+
+
+def dial(zk: ZK):
+    """zk.connect(), hanging up whatever a failed handshake left open.
+
+    pyzk's connect() sends CMD_CONNECT, and the terminal allots a session id
+    the moment it answers. When the handshake then fails (a refused comm key,
+    an odd response, a timeout on CMD_AUTH) connect() raises without sending
+    CMD_EXIT or closing its socket, and the caller has no conn to disconnect.
+    The terminal keeps that half-open session until it times it out, and it
+    serves only one at a time — so a retry with the right key is refused.
+    """
+    # ZK() opens a socket that connect() replaces without closing.
+    _close_socket(zk)
+    try:
+        return zk.connect()
+    except ZKErrorResponse:
+        # The terminal answered, so it holds a session for us. pyzk refuses
+        # CMD_EXIT on an instance it never marked connected.
+        zk.is_connect = True
+        try:
+            zk.disconnect()
+        except Exception:
+            pass
+        _close_socket(zk)
+        raise
+    except Exception:
+        # No answer: nothing to say CMD_EXIT to, but the socket is still ours.
+        _close_socket(zk)
+        raise
+
+
+def hang_up(conn) -> None:
+    """Disconnect, closing the socket even when CMD_EXIT goes unanswered.
+
+    pyzk's disconnect() raises before closing its socket when the terminal
+    does not ack CMD_EXIT.
+    """
+    try:
+        conn.disconnect()
+    except Exception:
+        pass
+    finally:
+        _close_socket(conn)
+
+
 def _connect(device, force_udp=None):
     zk = ZK(
         device.ip_address,
@@ -25,7 +78,7 @@ def _connect(device, force_udp=None):
         verbose=False,
     )
     try:
-        return zk.connect()
+        return dial(zk)
     except ZKErrorResponse as exc:
         # See app/services/sdk.py:_connect for why this message match is the
         # only reliable way pyzk signals a rejected comm key.
@@ -288,10 +341,7 @@ def pull_employees(serial_number: str) -> dict:
             db.rollback()
         finally:
             if conn:
-                try:
-                    conn.disconnect()
-                except Exception:
-                    pass
+                hang_up(conn)
 
         record_pull_outcome(
             db,
@@ -501,10 +551,7 @@ def pull_attendance(serial_number: str) -> dict:
             db.rollback()
         finally:
             if conn:
-                try:
-                    conn.disconnect()
-                except Exception:
-                    pass
+                hang_up(conn)
 
         record_pull_outcome(
             db,
@@ -630,10 +677,7 @@ def pull_templates(serial_number: str) -> dict:
             db.rollback()
         finally:
             if conn:
-                try:
-                    conn.disconnect()
-                except Exception:
-                    pass
+                hang_up(conn)
 
         record_pull_outcome(
             db, device, "templates", not result["errors"],

@@ -22,7 +22,7 @@ def _connect(zk_instance: ZK):
     is a network problem, not a credential one.
     """
     try:
-        return zk_instance.connect()
+        return poller.dial(zk_instance)
     except ZKErrorResponse as exc:
         if str(exc) == "Unauthenticated":
             raise AppError("device.comm_key_refused",
@@ -57,10 +57,7 @@ def device_connection(device: Device):
         try:
             yield conn
         finally:
-            try:
-                conn.disconnect()
-            except Exception:
-                pass
+            poller.hang_up(conn)
     finally:
         poller.release_session(device.serial_number)
 
@@ -137,16 +134,13 @@ def enroll_user_task(serial_number: str, user_id: str, finger_id: int) -> None:
         )
         conn = None
         try:
-            conn = zk_instance.connect()
+            conn = poller.dial(zk_instance)
             conn.enroll_user(uid=de.uid, temp_id=finger_id, user_id=user_id)
         except Exception:
             pass
         finally:
             if conn:
-                try:
-                    conn.disconnect()
-                except Exception:
-                    pass
+                poller.hang_up(conn)
             poller.release_session(serial_number)
     finally:
         db.close()
